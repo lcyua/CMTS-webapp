@@ -1,0 +1,2 @@
+import{test}from'node:test';import assert from'node:assert/strict';import{loginStudentNumbers}from'../src/login-options';
+test('unauthenticated login options contain active student numbers only',()=>{const result=loginStudentNumbers([{id:'secret-uid',role:'student',active:true,studentNo:'00101',name:'비공개 이름',password:'not-exported'},{role:'student',active:true,studentNo:'00101'},{role:'student',active:false,studentNo:'00102'},{role:'teacher',active:true,studentNo:'99999'},{role:'student',active:true,studentNo:'invalid'}]);assert.deepEqual(result,['00101']);});

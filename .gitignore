@@ -1,0 +1,12 @@
+node_modules/
+dist/
+.env*
+!.env.example
+functions/lib/
+.firebase/
+*-debug.log
+
+imports/
+roster*.xlsx
+roster*.csv
+!scripts/roster-template.csv
