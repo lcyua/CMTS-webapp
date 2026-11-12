@@ -11,16 +11,25 @@ const app=live?initializeApp({apiKey:env.env.VITE_FIREBASE_API_KEY,authDomain:en
 const auth=app?getAuth(app):null;const fn=app?getFunctions(app,'asia-northeast3'):null;
 if(auth&&fn&&env.env.VITE_USE_EMULATORS==='true'){connectAuthEmulator(auth,'http://127.0.0.1:9099');connectFunctionsEmulator(fn,'127.0.0.1',5001);}
 export const classId=env.env.VITE_CLASS_ID||'2027-1-11';
+async function invoke<T=any>(name:string,data:object):Promise<{data:T}>{
+ const base=env.env.VITE_API_BASE;
+ if(!base){if(!fn)throw Error('서버 연결 설정이 없습니다.');return await httpsCallable<object,T>(fn,name)(data);}
+ if(!/^https:\/\//.test(base))throw Error('안전한 서버 주소가 필요합니다.');
+ const headers:Record<string,string>={'Content-Type':'application/json'};
+ if(auth?.currentUser)headers.Authorization=`Bearer ${await auth.currentUser.getIdToken()}`;
+ const response=await fetch(`${base.replace(/\/$/,'')}/${name}`,{method:'POST',headers,body:JSON.stringify(data)});
+ const result=await response.json();if(!response.ok)throw Error(result.error||'서버 요청에 실패했습니다.');return {data:result as T};
+}
 export async function login(id:string,pw:string,google=false,remember=false){if(auth){await setPersistence(auth,remember?browserLocalPersistence:inMemoryPersistence);const r=google?await signInWithPopup(auth,new GoogleAuthProvider()):await signInWithEmailAndPassword(auth,id,pw);currentUid=r.user.uid;}else setDemoUser(id,remember);return refresh();}
-export async function refresh():Promise<State>{if(fn){const r=await httpsCallable(fn,'portal')({classId,action:'readState'});return r.data as State;}return visible(demo,currentUid);}
-export async function send(action:string,p:Record<string,any>,key=crypto.randomUUID()){if(!navigator.onLine)throw Error('오프라인에서는 제출할 수 없습니다.');if(fn)await httpsCallable(fn,'portal')({classId,action,p,key});else{const next=structuredClone(demo);command(next,currentUid,action,p,key);demo=next;}return refresh();}
+export async function refresh():Promise<State>{if(fn){const r=await invoke<State>('portal',{classId,action:'readState'});return r.data;}return visible(demo,currentUid);}
+export async function send(action:string,p:Record<string,any>,key=crypto.randomUUID()){if(!navigator.onLine)throw Error('오프라인에서는 제출할 수 없습니다.');if(fn)await invoke('portal',{classId,action,p,key});else{const next=structuredClone(demo);command(next,currentUid,action,p,key);demo=next;}return refresh();}
 export async function logout(){if(auth)await signOut(auth);clearDemoSession();currentUid='';demoListeners.forEach(f=>f());}
 
 export async function loginStudent(studentNo:string,pin:string,remember=false):Promise<State>{
  if(!/^\d{1,30}$/.test(studentNo)||!/^\d{4}$/.test(pin))throw Error('학번과 4자리 숫자 비밀번호를 입력하세요.');
  if(!auth||!fn){if(pin!=='2468'||!['01101','01102'].includes(studentNo))throw Error('데모 학번은 01101 또는 01102, 코드는 2468입니다.');setDemoUser(studentNo==='01101'?'student1':'student2',remember);return refresh();}
  await setPersistence(auth,remember?browserLocalPersistence:inMemoryPersistence);
- const response=await httpsCallable<{classId:string;studentNo:string;pin:string},{token:string}>(fn,'studentLogin')({classId,studentNo,pin});
+ const response=await invoke<{token:string}>('studentLogin',{classId,studentNo,pin});
  const user=await signInWithCustomToken(auth,response.data.token);currentUid=user.user.uid;return refresh();
 }
 
@@ -35,6 +44,6 @@ export function observeSession(onState:(s:State|null)=>void,onError:(e:unknown)=
 }
 
 export async function getLoginStudentNumbers():Promise<string[]>{
- if(fn){const response=await httpsCallable<{classId:string},{studentNumbers:string[]}>(fn,'studentLoginOptions')({classId});return response.data.studentNumbers;}
+ if(fn){const response=await invoke<{studentNumbers:string[]}>('studentLoginOptions',{classId});return response.data.studentNumbers;}
  return demo.members.filter(m=>m.role==='student'&&m.active).map(m=>String(m.studentNo)).sort();
 }

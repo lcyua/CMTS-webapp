@@ -1,5 +1,20 @@
 # 우리반 Firebase PWA — 구현 1차
 
+## 실제 Firebase 연결 진행 상황 (2026-11-12)
+
+- Firebase CLI 15.36.0 운영자 로그인과 `wooriban-2027` 프로젝트 접근 확인.
+- 기존 웹앱 SDK 설정을 비공개 `.env.local`로 조회·연결. 학급 ID는 `2027-1-11`.
+- 서울 `asia-northeast3`에 Standard 기본 Firestore 생성 완료. 클라이언트 직접 접근을 모두 거부하는 Rules를 실제 배포 완료.
+- Firebase Auth의 Google 및 이메일/비밀번호 제공자 설정 배포 완료. 운영자 이메일의 교사 Auth 계정 준비 완료. 학급 membership은 학생 발급과 함께 구성해야 함.
+- 원본 시트의 학번·이름 두 열만 읽어 학생 18명을 비공개 `imports/roster-pending.json`으로 준비·검증. 기존 비밀번호 값은 조회하지 않음. 실제 학생 계정·새 비밀번호는 아직 발급하지 않음.
+- Functions와 Secret Manager 배포를 실제 실행했으나 Spark 요금제에서는 필요한 API를 활성화할 수 없어 실패. 사용자가 결제 계정 연결을 원하지 않으므로 Blaze 전환 및 유료 리소스 설정은 진행하지 않음.
+- 무료 대안 검토: Firebase Hosting/Auth/Firestore는 Spark 유지, 서버 검증·토큰 발급·업무 명령은 Cloudflare Workers Free로 이전. 별도 Cloudflare 로그인과 서버 어댑터 변경·권한/부하 검증이 필요하며 아직 배포하지 않음.
+- Hosting 사이트의 등록 주소는 `https://wooriban-2027.web.app`이지만 이번 작업에서 정상 운영 앱을 Hosting에 배포하거나 접속 검증하지 않았음. 배포 성공 주소로 안내하면 안 됨.
+- 로컬 도메인·로그인 관련 테스트 21개, 프런트 및 Functions TypeScript 빌드 통과. `scripts/test-emulator.ts`를 Auth/Functions/Firestore Emulator에서 실행하여 비로그인·타학급·학생 권한 거부, 클라이언트 직접 읽기/쓰기 거부, 동시 동일 요청 6회의 단일 지급, 응답 개인정보/정답 필터링, 계정 비활성화 후 접근 거부를 검증 완료. 이는 운영 서버 검증을 대신하지 않음.
+- 통합 검증 실행: `npx -y firebase-tools@latest --config firebase.emulator.json emulators:exec --project demo-class-portal --only auth,firestore,functions 'npx tsx scripts/test-emulator.ts'`. 호스트 8080 포트 점유를 피하도록 테스트용 Firestore는 8180을 사용. Functions 비밀값은 Git에서 제외된 `functions/.secret.local`에 테스트 전용 값만 설정.
+
+아래의 기존 구현·미완료 목록은 이 현황을 기준으로 읽어야 합니다. 결제 없이 운영하려면 기존 `firebase deploy --only functions` 방식으로는 완료할 수 없습니다.
+
 React 19 / TypeScript / Vite, Firebase Auth와 callable Functions 연결. 학생·교사 데모를 제공합니다. 기존 평문 비밀번호는 포함하지 않습니다.
 
 ## 실행

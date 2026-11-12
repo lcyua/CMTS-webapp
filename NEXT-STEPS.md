@@ -1,5 +1,15 @@
 # Firebase 실제 배포 이어가기
 
+## 최신 진행 및 무료 운영 전환
+
+사용자는 결제 계정 연결과 Blaze 전환을 원하지 않습니다. Firebase Spark를 유지하고 Cloudflare Workers Free 서버를 사용하기로 했으며 Cloudflare 계정 가입을 완료했습니다. 유료 리소스/구독을 추가하지 마세요.
+
+실제 Firebase CLI 로그인·프로젝트 접근, 서울 리전 기본 Firestore 생성, deny-all Rules 및 Google/이메일 Auth 설정 배포, 운영자 교사 Auth 계정 준비를 완료했습니다. 학생 18명 학번/이름은 비공개 imports에서 검증했지만 실제 학생 계정과 새 PIN은 아직 발급하지 않았습니다.
+
+`worker/README.md`에 무료 어댑터·보안 구조·운영 배포 순서를 기록했습니다. UI는 유지하며 `VITE_API_BASE`로 Workers를 선택합니다. 발급 도구에는 `--workers`를 명시해야 합니다. 기존 scrypt 계정을 Workers 계정과 혼용하지 마세요.
+
+현재 작업 환경에는 Cloudflare 허용 목록 변경이 반영되지 않았습니다. 사용자가 설정 변경을 완료했다고 했지만 실행 환경 status는 spec revision 1, 허용 호스트는 Google 관련 항목뿐이며 새 `api.cloudflare.com` 연결도 프록시 CONNECT 403입니다. 최신 네트워크 설정이 적용된 환경이 필요합니다. Cloudflare 배포/Hosting 접속 검증은 아직 완료되지 않았습니다. 서비스 계정 키나 OAuth refresh token, 원본 명단·PIN·pepper를 Git에 추가하지 마세요.
+
 최신 주황 UI와 서버 코드를 이 저장소에 보존했습니다. 현재 배포된 Sites는 가상 데이터 검토본이며 실제 학생용 Firebase 배포는 완료되지 않았습니다.
 
 ## 새 클라우드 작업에서
