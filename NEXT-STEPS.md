@@ -1,28 +1,50 @@
 # Firebase 실제 배포 이어가기
 
-## 최신 진행 및 무료 운영 전환
+## 현재 상태 — 2026-11-12
 
-사용자는 결제 계정 연결과 Blaze 전환을 원하지 않습니다. Firebase Spark를 유지하고 Cloudflare Workers Free 서버를 사용하기로 했으며 Cloudflare 계정 가입을 완료했습니다. 유료 리소스/구독을 추가하지 마세요.
+PR #1의 `setup/firebase-workers-free` 브랜치에서 Firebase Spark + Cloudflare Workers 서버를 실제 배포했습니다. 결제 계정·Blaze·Workers 유료 구독을 추가하지 않았습니다. 배포 후 Cloud Billing API에서 `billingEnabled=false`, 빈 `billingAccountName`을 확인했습니다.
 
-실제 Firebase CLI 로그인·프로젝트 접근, 서울 리전 기본 Firestore 생성, deny-all Rules 및 Google/이메일 Auth 설정 배포, 운영자 교사 Auth 계정 준비를 완료했습니다. 학생 18명 학번/이름은 비공개 imports에서 검증했지만 실제 학생 계정과 새 PIN은 아직 발급하지 않았습니다.
+- Hosting: https://wooriban-2027.web.app
+- API: https://wooriban-2027-api.wooriban-2027.workers.dev
+- 프로젝트: `wooriban-2027`, 기본 Firestore: Standard / `asia-northeast3`.
+- 학급 `2027-1-11`, 2027학년도, 학생 18명과 교사 1명 membership 구성 완료. 초기 포인트·공지·감사 이력은 비어 있습니다.
+- Hosting live 버전 `293841b2aa5c57a6`, 2026-11-12 20:29 KST 배포. Hosting API에서 `FINALIZED` 및 live release를 확인했고 번들의 API 주소와 서버 비밀값 미포함도 확인했습니다.
+- Google·이메일/비밀번호 Auth와 deny-all Firestore Rules 유지. Functions·Secret Manager는 배포하지 않았습니다.
+- 최종 Worker 버전 `04f64559-5bfd-4c06-91cd-fd0c030377e7`. 전용 서버 계정은 발급 후 Auth 관리 권한을 제거하고 `roles/firebaseauth.viewer`와 `roles/datastore.user`만 유지합니다. 이 런타임 계정으로 학생 생성·변경·삭제를 실행하지 않습니다.
 
-`worker/README.md`에 무료 어댑터·보안 구조·운영 배포 순서를 기록했습니다. UI는 유지하며 `VITE_API_BASE`로 Workers를 선택합니다. 발급 도구에는 `--workers`를 명시해야 합니다. 기존 scrypt 계정을 Workers 계정과 혼용하지 마세요.
+원본 시트에서는 `학생코드!A2:B61`의 학번·이름만 읽었습니다. C열의 기존 학생 비밀번호 데이터는 읽거나 사용하지 않았습니다. 학생 18명을 `--workers`로 한 번 발급했고 새 PIN은 권한 600의 `imports/student-login-codes.private.json`에만 보관했습니다. 이 파일·원본 명단·`.env.local`·서버 키·pepper·OAuth 인증 정보는 Git과 정적 배포에서 제외했습니다.
 
-2026-11-12의 새 환경에서는 Cloudflare 허용 목록이 적용되었으며 API 접속과 Wrangler OAuth 로그인을 확인했습니다. 계정 ID는 `046268350e5930f25adaed2e20fe1df7`이고, 무료 Workers용 `wooriban-2027.workers.dev` 서브도메인을 등록했습니다. 결제·유료 구독은 추가하지 않았습니다. Worker는 아직 존재하지 않으며 배포하지 않았습니다.
+**학생 발급을 다시 실행하지 마세요.** 학급 상태와 초기화 작업은 이미 존재합니다. 기존 계정·PIN·포인트를 자동 재발급하거나 덮어쓰지 않습니다. 새 환경으로 이동하기 전 비공개 발급 파일을 운영자가 안전하게 보관해야 합니다. Git checkout에는 비공개 파일과 로그인 정보가 포함되지 않습니다.
 
-새 환경에는 이전 Firebase 로그인·서버 키·명단이 보존되지 않았습니다. Firebase CLI 15.36.0의 `login:list`에서 인증 계정이 없음을 확인했고 운영자 로그인을 기다리고 있습니다. CLI 인증 코드는 채팅에 요청하지 않습니다. 실제 원본 시트의 `학생코드!A2:B61` 두 열만 다시 읽어 18명을 비공개 `imports/roster-pending.json`에 준비하고 검증했습니다. C열의 기존 학생 비밀번호 데이터는 읽지 않았습니다. 학생 발급은 아직 실행하지 않았습니다.
+## 검증 결과
 
-현재 환경에서 24개 테스트, Worker strict 타입 검사, 프런트 빌드, Functions 호환 빌드, Wrangler 4.160.1 dry-run을 통과했습니다. 실제 Hosting 주소의 접속은 환경 프록시 CONNECT 403으로 차단됩니다. 기존 허용 목록을 유지한 채 `wooriban-2027.web.app`, `wooriban-2027.firebaseapp.com`, `www.gstatic.com`, `apis.google.com`을 추가해 실제 브라우저 검증이 가능하도록 해야 합니다. 서비스 계정 키나 OAuth refresh token, 원본 명단·PIN·pepper를 Git에 추가하지 마세요.
+- 로컬 테스트 28개, Worker strict 검사, 실제 Firebase 설정의 프런트 빌드, Functions 호환 빌드 통과.
+- 실제 Worker health·CORS·비로그인·타학급 요청 거부 확인.
+- 새 PIN 18개 모두 실제 로그인 → Firebase 토큰 교환 → 학급 조회 성공. 학생 응답 필터와 교사 membership, 2027 학년도·0점 초기 상태 확인.
+- 학생의 포인트 지급·Firestore 직접 읽기/쓰기 거부. 임시 계정으로 비소속·위조 JWT·타학급·토큰 철회·비활성 계정 거부 확인 후 임시 계정 삭제.
+- 임시 문서의 동일 요청 6개 동시 commit이 한 번만 반영됨을 확인하고 문서 삭제. 실제 학생에게 테스트 포인트를 지급하지 않았습니다.
+- 실서버에서 발견한 HTTP 400 `FAILED_PRECONDITION` 재시도와 발급 도구의 Firestore REST 프록시 설정을 수정했습니다. 잘못된 입력은 충돌로 재시도하지 않습니다.
+- 최종 Worker에서 학생 18명의 로그인 CPU 5~8ms, portal 샘플 1~5ms, 로그인 옵션 6ms를 관측했습니다. 수집 요청은 모두 정상 처리됐으며 장기 부하·일일 무료 쿼터 관찰은 별도입니다.
 
-최신 주황 UI와 서버 코드를 이 저장소에 보존했습니다. 현재 배포된 Sites는 가상 데이터 검토본이며 실제 학생용 Firebase 배포는 완료되지 않았습니다.
+Hosting 화면의 드롭다운·Google 팝업·새로고침 유지·로그아웃·실기기 PWA 검증은 **미완료**입니다. 환경 프록시의 CONNECT 403 및 공유 Chromium의 `ERR_TUNNEL_CONNECTION_FAILED`를 확인했습니다. 배포 성공과 브라우저 검증 완료를 구분해 보고해야 합니다. CPU 실측과 잔여 주의사항은 `worker/README.md`에 기록합니다.
 
-## 새 클라우드 작업에서
+## 다음 작업
 
-1. 이 저장소의 `setup/firebase-workers-free` 브랜치 및 최신 네트워크 설정이 적용된 환경을 선택합니다. 이 브랜치는 PR #1입니다.
-2. `auth.firebase.tools`, `accounts.google.com`, `*.googleapis.com` 접근을 확인합니다. 기존 작업은 수정 전 네트워크 정책을 유지할 수 있습니다.
-3. Firebase 스킬에 따라 최신 CLI 버전과 login:list를 확인하고 필요하면 login --no-localhost로 운영자 Google 로그인을 연결합니다. 비밀번호·인증 코드를 채팅에 요청하지 않습니다.
-4. 프로젝트는 wooriban-2027, 학급은 2027-1-11, 웹앱은 1:1064807905569:web:7d4a1fd925bdd6e72ee660입니다. 웹 SDK 설정은 Firebase CLI로 조회하여 .env.local에 작성합니다.
-5. 기존 Spark·기본 Firestore·Auth·교사 계정 상태를 확인합니다. `worker/README.md` 순서대로 전용 서비스 계정·Wrangler secrets를 구성하고 Worker를 먼저 배포·검증한 후 비공개 명단의 실제 18명을 `--workers`로 1회 발급합니다. 기존 시트 비밀번호는 읽거나 사용하지 않습니다. 기존 계정이나 초기화 작업이 있으면 자동 재발급·덮어쓰기를 하지 않습니다.
-6. README의 실운영 전 남은 작업을 처리하고 실제 인증/권한/트랜잭션 검증 후 `VITE_API_BASE`를 설정해 Hosting만 배포합니다. 필요한 Rules 배포는 별도로 지정합니다. Functions·Secret Manager 배포나 결제 연결을 실행하지 않습니다. 실제 성공 URL과 테스트 결과를 확인하기 전에는 완료라고 보고하지 않습니다.
+1. 기존 네트워크 목록에 `wooriban-2027.web.app`, `wooriban-2027.firebaseapp.com`, `www.gstatic.com`, `apis.google.com`을 추가·적용합니다. 기존 API 허용 호스트도 유지합니다.
+2. 실제 Hosting 주소에서 학생 로그인, 운영자 Google 로그인, 권한, 로그인 유지·새로고침·로그아웃을 검증합니다. 비밀번호나 인증 코드를 채팅에 요청하지 않습니다.
+3. CPU·무료 쿼터 관찰과 README의 단일 문서 700KB, 백업·복구·삭제 일정, FCM 등의 미완료 요구사항을 처리합니다. 결제 연결이나 유료 업그레이드로 우회하지 않습니다.
 
-`imports/`와 .env.local, 실제 명단·비밀번호·발급 코드는 Git에 포함하지 않았습니다. 실제 학생 명단은 기존 대화에서 제공된 원본 Google Sheet를 승인 범위 안에서 다시 읽어야 합니다.
+## 이후 코드 배포
+
+`VITE_API_BASE`는 위 API 주소여야 합니다. 비우면 과거 callable Functions를 사용합니다. 전용 서버 자격 증명은 Wrangler secrets에만 두며 운영자 OAuth refresh token은 배포하지 않습니다.
+
+```sh
+npm test
+npm run worker:check
+npm run build
+npm --prefix functions run build
+npx -y wrangler@latest deploy
+npx -y firebase-tools@latest deploy --only hosting --project wooriban-2027
+```
+
+Rules 변경은 `npx -y firebase-tools@latest deploy --only firestore:rules --project wooriban-2027`로 별도 배포합니다. 전체 deploy나 Functions·Secret Manager 배포를 실행하지 않습니다.

@@ -1,6 +1,7 @@
 /** One-time administrative provisioning. Default is local validation, never an upload. */
 import {readFileSync,existsSync,writeFileSync,mkdirSync,renameSync} from 'node:fs';
 import {createRequire} from 'node:module';import {randomInt,randomUUID,createHash} from 'node:crypto';
+import https from 'node:https';
 import {hashPin} from '../functions/src/student-pin';import {emptyClass} from '../src/roster';
 import {pinPassword} from '../worker/credentials';
 const args=process.argv.slice(2);const option=(flag:string)=>{const i=args.indexOf(flag);return i>=0?args[i+1]:undefined};
@@ -16,6 +17,8 @@ if(args.includes('--apply')){
  if(process.env.FIRESTORE_EMULATOR_HOST||process.env.FIREBASE_AUTH_EMULATOR_HOST)throw Error('실제 명단 처리에서는 에뮬레이터 변수를 제거하세요.');
  const adminRequire=createRequire(new URL('../functions/package.json',import.meta.url));const {initializeApp,applicationDefault}=adminRequire('firebase-admin/app');const{getAuth}=adminRequire('firebase-admin/auth');const{initializeFirestore}=adminRequire('firebase-admin/firestore');
  const proxy=process.env.HTTPS_PROXY;const httpAgent=proxy?new (adminRequire('https-proxy-agent').HttpsProxyAgent)(proxy):undefined;
+ // Firestore's REST transport uses node-fetch and does not inherit App.httpAgent.
+ if(httpAgent)https.globalAgent=httpAgent;
  const app=initializeApp({credential:applicationDefault(httpAgent),httpAgent,projectId:'wooriban-2027'});const auth=getAuth(),db=initializeFirestore(app,{preferRest:true});
  const teacher=await auth.getUserByEmail(teacherEmail);if(teacher.disabled)throw Error('교사 계정이 비활성화되었습니다.');
  const output='imports/student-login-codes.private.json';if(existsSync(output))throw Error('기존 코드 전달 파일이 있어 중단했습니다.');

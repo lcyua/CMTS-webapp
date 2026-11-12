@@ -45,7 +45,8 @@ export default {async fetch(req:Request,env:Env):Promise<Response>{
    const check=await fetch(`https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=${env.FIREBASE_WEB_API_KEY}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:account.authEmail,password,returnSecureToken:true})});
    const verified=await check.json() as any;if(!check.ok||verified.localId!==account.uid)throw new HttpError(401,'학번 또는 비밀번호가 일치하지 않습니다.');
    const state=store.value(await store.get(statePath));if(!state?.members.some((m:any)=>m.id===account.uid&&m.active&&m.role==='student'&&m.studentNo===studentNo))throw new HttpError(401,'학번 또는 비밀번호가 일치하지 않습니다.');
-   await user(sa,env.FIREBASE_PROJECT_ID,account.uid);
+   // signInWithPassword already rejects disabled accounts. Firebase checks again
+   // when the client exchanges the custom token; portal also checks every request.
    await store.change(gates,old=>({values:old.map((v,i)=>v?.start===windows[i]?{...v,count:Math.max(0,v.count-1)}:v),result:null}));
    const token=await new SignJWT({uid:account.uid}).setProtectedHeader({alg:'RS256'}).setIssuer(sa.client_email).setSubject(sa.client_email).setAudience('https://identitytoolkit.googleapis.com/google.identity.identitytoolkit.v1.IdentityToolkit').setIssuedAt().setExpirationTime('5m').sign(await signingKey(sa));
    return json({token});
