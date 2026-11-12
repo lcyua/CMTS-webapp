@@ -2,6 +2,8 @@
 
 이 어댑터는 Firebase Functions 및 Secret Manager 없이 기존 UI와 Firebase Auth/Firestore를 연결합니다. **현재 로컬 검증만 완료했으며 운영 배포·학생 발급·무료 CPU 한도 실측은 미완료입니다.**
 
+2026-11-12 새 환경에서 Cloudflare API 접속 및 CLI 로그인을 확인하고 `wooriban-2027.workers.dev` 서브도메인을 등록했습니다. Worker는 아직 배포하지 않았습니다. Firebase CLI 재로그인이 필요하며, 실제 Hosting 검증 도메인의 네트워크 허용도 필요합니다. 자세한 현재 상태는 `NEXT-STEPS.md`를 참조하세요.
+
 ## 서버 비밀값
 
 Wrangler secret으로만 설정합니다. `.env.local`의 `VITE_*`, Git, 정적 배포 디렉터리에 넣지 않습니다.
@@ -31,6 +33,8 @@ Wrangler secret으로만 설정합니다. `.env.local`의 `VITE_*`, Git, 정적 
 1. `npm test`, `npm run worker:check`, `npm run build`, Functions 호환 빌드 확인.
 2. `npx -y wrangler@latest deploy --dry-run --outdir /tmp/wooriban-worker-build`로 번들 점검.
 3. Cloudflare CLI 로그인, 전용 Firebase 서비스 계정과 Wrangler secrets 구성. 비밀값은 CLI 입력/비공개 파일에서만 처리.
+
+   원격 환경에서는 `npx -y wrangler@latest login --device --scopes account:read user:read workers:write workers_scripts:write workers_tail:read`로 배포에 필요한 범위만 연결할 수 있습니다. 나머지 제품의 OAuth scope 누락 경고를 없애기 위해 권한을 넓히지 않습니다. Firebase CLI 로그인·서버 키와 학생 명단은 Git checkout에 보존되지 않으므로 새 환경에서 다시 확인합니다.
 4. Worker 배포 후 `/health`, CORS, 실제 Google ID token, 비인가/타학급 접근 거부, 동시 요청, CPU 및 무료 한도 검증.
 5. `--workers`로 실제 명단을 1회 발급하고 teacher membership/학년도/0점 초기 상태 확인. 가상 seed를 실데이터에 사용하지 않음.
 6. 배포된 Worker HTTPS URL을 `.env.local`의 `VITE_API_BASE`로 설정하고 다시 빌드. `npx -y firebase-tools@latest deploy --only hosting --project wooriban-2027` 실행.
