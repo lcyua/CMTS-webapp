@@ -1,64 +1,55 @@
 # Firebase 실제 배포 이어가기
 
-## 현재 상태 — 2026-11-12
+## 현재 상태 — 2026-11-13 KST
 
-PR #1의 `setup/firebase-workers-free` 브랜치에서 Firebase Spark + Cloudflare Workers 서버를 실제 배포했습니다. 결제 계정·Blaze·Workers 유료 구독을 추가하지 않았습니다. 배포 후 Cloud Billing API에서 `billingEnabled=false`, 빈 `billingAccountName`을 확인했습니다.
-
-- Hosting: https://wooriban-2027.web.app
+- 작업: PR #1, `setup/firebase-workers-free`. 구현 커밋 `32cbeb3`을 푸시했습니다.
+- 서비스: https://wooriban-2027.web.app
 - API: https://wooriban-2027-api.wooriban-2027.workers.dev
-- 프로젝트: `wooriban-2027`, 기본 Firestore: Standard / `asia-northeast3`.
-- 학급 `2027-1-11`, 2027학년도, 학생 18명과 교사 1명 membership 구성 완료. 초기 포인트·공지·감사 이력은 비어 있습니다.
-- Hosting live 버전 `293841b2aa5c57a6`, 2026-11-12 20:29 KST 배포. Hosting API에서 `FINALIZED` 및 live release를 확인했고 번들의 API 주소와 서버 비밀값 미포함도 확인했습니다.
-- Google·이메일/비밀번호 Auth와 deny-all Firestore Rules 유지. Functions·Secret Manager는 배포하지 않았습니다.
-- 최종 Worker 버전 `04f64559-5bfd-4c06-91cd-fd0c030377e7`. 전용 서버 계정은 발급 후 Auth 관리 권한을 제거하고 `roles/firebaseauth.viewer`와 `roles/datastore.user`만 유지합니다. 이 런타임 계정으로 학생 생성·변경·삭제를 실행하지 않습니다.
+- 프로젝트 `wooriban-2027`, 학급 `2027-1-11`, 2027학년도, 학생 18명·교사 1명 구성은 유지합니다.
+- **Worker 새 버전 배포 완료:** `3c140c5b-1b47-4859-a625-e9a75af1708f`, 시작 시간 3ms. `/health`에서 `apiVersion=2`, `configured=true`, `history=true`, `push=false` 확인.
+- **Hosting 새 화면은 배포 대기:** 기존 live 버전 `293841b2aa5c57a6`은 2026-11-12 배포본입니다. 새 화면은 실제 공개 Firebase 설정으로 빌드 완료했지만 Firebase CLI 운영자 인증이 없어 아직 배포하지 않았습니다.
+- 사용자 공식 Cloudflare device 로그인 완료와 대상 계정을 확인한 뒤 `wrangler deploy --keep-vars`로 기존 비밀 설정을 유지해 배포했습니다. Firebase·Cloudflare 결제 연결, Blaze·Workers 유료 업그레이드, Functions·Secret Manager 배포는 하지 않았습니다.
 
-원본 시트에서는 `학생코드!A2:B61`의 학번·이름만 읽었습니다. C열의 기존 학생 비밀번호 데이터는 읽거나 사용하지 않았습니다. 학생 18명을 `--workers`로 한 번 발급했고 새 PIN은 권한 600의 `imports/student-login-codes.private.json`에만 보관했습니다. 이 파일·원본 명단·`.env.local`·서버 키·pepper·OAuth 인증 정보는 Git과 정적 배포에서 제외했습니다.
+## 기존 계정·PIN 보호
 
-**학생 발급을 다시 실행하지 마세요.** 학급 상태와 초기화 작업은 이미 존재합니다. 기존 계정·PIN·포인트를 자동 재발급하거나 덮어쓰지 않습니다. 새 환경으로 이동하기 전 비공개 발급 파일을 운영자가 안전하게 보관해야 합니다. Git checkout에는 비공개 파일과 로그인 정보가 포함되지 않습니다.
+**학생 발급·학급 초기화를 다시 실행하지 않습니다.** 기존 18명 계정·PIN·포인트를 재발급하거나 덮어쓰지 않았습니다. 원본 시트의 기존 비밀번호 열도 조회하지 않았습니다. PIN·명단·서버 키·pepper·운영자 OAuth 정보는 Git과 정적 배포에서 제외합니다.
+
+비공개 PIN 전달 파일은 `imports/student-login-codes.private.json`입니다. 운영자가 별도 보관하며 소스 ZIP에는 없습니다. 현재 작업 환경에도 해당 파일이 없습니다. 학생은 배포 사이트에서 학번과 이미 발급된 네 자리 PIN으로 로그인합니다. 비밀번호·PIN·인증 코드를 채팅에 요청하지 않습니다.
+
+런타임 서버 계정의 기존 `roles/datastore.user`, `roles/firebaseauth.viewer`를 유지하며 학생 Auth 계정 생성·변경·삭제에 사용하지 않습니다. FCM용 권한도 아직 추가하지 않았습니다.
+
+## 이번에 구현한 후속 작업
+
+- 명령별 허용 필드·타입·길이·실제 날짜 검사, 학생 전용 권한, 미처리 신청 수 제한과 사용자별 쓰기 제한.
+- 교사용 설정 입력 폼, 제출된 문제의 내용·정답 동결, 학생의 대기 시험 신청 수정·처리 버전 검사.
+- 원장·신청·문제풀이·공지·문제 정의·알림·감사 이력을 개별 문서로 분리하고 소유자별 조회·서버 커서·중복 요청 영수증·포인트 요약·전체 미읽음 개수 유지.
+- 기존 이력은 원자적으로 보존·이전합니다. 첫 이전과 동일한 commit에 원본 상태를 `migrationBackups`에 복사합니다. 복구 세대 포인터를 지원합니다. [저장 구조](docs/STORAGE.md) 참조.
+- 이력 전체·영수증을 같은 시점으로 백업하고 새 세대를 준비한 뒤 CAS로 전환하는 복구, 비공개 파일·체크섬·로컬 보관 정리·일일 실행 도구. 실제 운영 실행·예약 등록은 아직 하지 않았습니다. [운영 절차](OPERATIONS.md) 참조.
+- PWA 정적 앱 사전 캐시·설치 안내·오프라인 복귀·사용자 선택 업데이트·실패한 업데이트 보존.
+- 선택형 FCM 기기 등록·사용자 동의·계정 전환/로그아웃 정리·한도 있는 원자적 큐·재시도·개인정보를 표시하지 않는 푸시. **기본 꺼짐**이며 실제 발송하지 않았습니다. [푸시 절차](docs/PUSH.md) 참조.
+- 구형 화면이 배포 전환 중 동작하도록 Worker 조회 호환 경로를 유지했습니다. 새 화면은 `clientVersion=2`로 필요한 현재 상태만 읽고 이력은 별도 조회합니다.
 
 ## 검증 결과
 
-- 로컬 테스트 28개, Worker strict 검사, 실제 Firebase 설정의 프런트 빌드, Functions 호환 빌드 통과.
-- 실제 Worker health·CORS·비로그인·타학급 요청 거부 확인.
-- 새 PIN 18개 모두 실제 로그인 → Firebase 토큰 교환 → 학급 조회 성공. 학생 응답 필터와 교사 membership, 2027 학년도·0점 초기 상태 확인.
-- 학생의 포인트 지급·Firestore 직접 읽기/쓰기 거부. 임시 계정으로 비소속·위조 JWT·타학급·토큰 철회·비활성 계정 거부 확인 후 임시 계정 삭제.
-- 임시 문서의 동일 요청 6개 동시 commit이 한 번만 반영됨을 확인하고 문서 삭제. 실제 학생에게 테스트 포인트를 지급하지 않았습니다.
-- 실서버에서 발견한 HTTP 400 `FAILED_PRECONDITION` 재시도와 발급 도구의 Firestore REST 프록시 설정을 수정했습니다. 잘못된 입력은 충돌로 재시도하지 않습니다.
-- 최종 Worker에서 학생 18명의 로그인 CPU 5~8ms, portal 샘플 1~5ms, 로그인 옵션 6ms를 관측했습니다. 수집 요청은 모두 정상 처리됐으며 장기 부하·일일 무료 쿼터 관찰은 별도입니다.
+- 최종 `npm test` **89/89**, Worker strict 검사, 프런트 TypeScript·실제 Firebase 설정 빌드, Functions 호환 빌드, Wrangler dry-run 통과.
+- 격리된 가상 데이터 브라우저에서 학생/교사 화면·권한 표시, 앱 새로고침·로그인 유지·로그아웃, 시험 신청 생성·수정, 실장 배치 편집, 교사 필드 저장, 미래 문제 비공개, 개인 포인트 조회 등 **17개** 확인. 실제 서비스에 테스트 계정·포인트·신청을 넣지 않았습니다.
+- 격리된 Chromium PWA **10개** 시나리오 통과. 설치 가능성 오류·페이지 오류 없음. 실제 Android/iOS 설치·수신 검증은 아닙니다.
+- 새 Worker 실제 API: 학번 18개 반환, 비로그인 401, 타학급 403, 비허용 Origin 403, 잘못된 요청 400 통과. 기존 18명 PIN을 읽거나 다시 로그인시키지 않았습니다.
+- 60일·18명 일일 퀴즈와 1년 포인트 기록을 보관해도 주 상태 크기가 제한 안에 있고, 경합 시 한 번만 지급·예약 만료 처리·복구 세대 전환·전체 백업·중복 키 보존을 모의 Firestore로 확인했습니다. 실제 Firestore의 인증된 분리 조회·이전·새 코드 CPU/장기 무료 쿼터는 아직 확인 전입니다.
+- 사용자가 기존 Hosting에서 자동로그인, 브라우저 새로고침 후 로그인 유지, 로그아웃 후 새로고침 시 비로그인 유지까지 직접 확인했습니다. 계정 역할·로그인 방식은 이 보고에서 특정하지 않았습니다.
+- 이전 Worker `04f64559-5bfd-4c06-91cd-fd0c030377e7`의 18명 실제 로그인·토큰 교환·학급 조회 및 로그인 CPU 5~8ms, portal 1~5ms 결과는 과거 배포의 결과입니다. 이를 새 버전의 실측으로 간주하지 않습니다.
 
-2026-11-12에는 환경 프록시의 CONNECT 403 및 공유 Chromium의 `ERR_TUNNEL_CONNECTION_FAILED`로 Hosting 브라우저 검증을 진행하지 못했습니다. 최신 환경에서 재검증한 결과는 아래와 같습니다. 배포 성공과 인증 후 브라우저 검증 완료를 구분해 보고해야 합니다. CPU 실측과 잔여 주의사항은 `worker/README.md`에 기록합니다.
+## 바로 다음 단계
 
-## Hosting 브라우저 재검증 — 2026-11-13
+1. 사용자는 공유 Desktop을 열 수 없고 자신의 컴퓨터에서 터미널 명령은 실행할 수 있다고 확인했습니다. Firebase 인증 코드를 채팅으로 전달하지 않고, 본인 컴퓨터의 공식 CLI 로그인과 Hosting 배포로 진행합니다.
+2. 실제 공개 설정으로 빌드한 Hosting 전용 ZIP을 준비했습니다. `dist/`, Hosting만 지정한 `firebase.json`, 프로젝트 선택, Windows/macOS/Linux 실행 파일만 포함하며 소스·명단·PIN·서버 비밀값은 없습니다. 약 286KiB, SHA-256 `4516ccd12789978af44b102f35d52a4128e4e4a69bc6744b7d9ea6b1d1a196b1`. Drive 전송은 자동 승인 검토에서 명시적 허용 부족으로 거부됐으며, 현재 사용자 허용 답변을 기다립니다. 승인·업로드·메타데이터 확인 전에는 전달 완료로 표시하지 않습니다.
+3. ZIP을 압축 해제한 폴더에서 다음 두 명령을 실행합니다. Windows 실행 파일과 macOS/Linux 스크립트도 같은 명령만 수행합니다.
 
-- 최신 환경 status에서 필요한 10개 도메인과 `observations_current=true`, 네트워크 정책 `enforced`를 확인했습니다. 새 연결에서 Hosting HTTP 200, Worker `/health`의 `ok=true`, `configured=true`를 확인했습니다. 이전 Hosting 접속 차단은 해소됐습니다.
-- 실제 배포 주소를 Chromium으로 열어 로그인 화면·2027학년도·1학년 11반·학교명을 확인했습니다. 1440×1050 및 390×844 화면에서 가로 넘침이 없었습니다. 모바일 결과는 화면 크기 에뮬레이션이며 실기기 설치 검증은 아닙니다.
-- 학번 드롭다운에 중복 없는 숫자 학번 18개가 표시되고 이름은 노출되지 않았습니다. PIN 입력은 마스킹·숫자 키보드·4자리 제약을 사용합니다. 빈 입력·3자리·문자 입력이 브라우저에서 차단됐으며 이 검사 중 `/studentLogin` 요청은 보내지 않았습니다.
-- 자동로그인은 기본 꺼짐이며 학생·교사 폼의 체크 상태가 연동됐습니다. 오프라인 학생 로그인 비활성화·온라인 복귀 시 활성화, 비로그인 상태의 브라우저 새로고침을 확인했습니다. 로그인 화면 UI 검사 11개가 통과했습니다.
-- 2026-11-13 사용자가 자신의 브라우저에서 자동로그인, 브라우저 새로고침 후 로그인 유지, 로그아웃 후 새로고침해도 비로그인 상태인 것을 직접 확인했습니다. 사용자 확인 결과이며 에이전트의 독립 재현 결과는 아닙니다. 계정 역할과 로그인 방식은 이 보고에서 확인되지 않았습니다.
-- 교사 로그인 펼침과 Google 팝업이 실제 `accounts.google.com` 로그인 화면까지 열리는 것을 확인했습니다. 자격 증명을 입력하거나 운영자 인증을 완료한 결과는 아닙니다. Google 화면의 `fonts.gstatic.com` 글꼴 요청 일부는 환경 정책에 막혔지만 로그인 폼은 표시됐습니다.
-- 서비스 워커가 실제 Hosting 주소에서 `activated` 상태인 것을 확인했습니다. PWA 실기기 설치·오프라인 인증·FCM 수신을 검증한 결과는 아닙니다.
-- 기존 `npm test` 28/28 및 `npm run worker:check`를 다시 통과했습니다. 프런트·Worker·Rules를 변경하거나 재배포하지 않았습니다.
-- 검증용 환경에는 `imports/student-login-codes.private.json`과 로그인 세션이 없어 에이전트의 인증 재현은 진행하지 못했습니다. **인증 후 앱 내부 새로고침, 교사 Google 인증 완료, 역할별 화면·권한과 실기기 PWA는 아직 미검증**입니다. 기존 계정·PIN 재발급, 원본 시트/기존 비밀번호 조회, 결제 연결은 실행하지 않았습니다.
+   ```sh
+   npx -y firebase-tools@latest login
+   npx -y firebase-tools@latest deploy --only hosting --project wooriban-2027
+   ```
 
-남은 인증 후 검증에서는 앱의 `↻ 새로고침`이 세션을 유지하는지 확인합니다. 학생의 설정 메뉴 부재와 개인 기록 필터, 교사 메뉴와 Google 인증 완료도 실제 로그인 후 확인해야 합니다.
+4. 실제 Hosting의 새 번들·서비스 워커·로그인 화면을 다시 확인하고, 운영자 Google 인증 완료·실제 역할별 화면·분리 조회/이전·CPU/무료 쿼터를 검증합니다. 이후 관리 호스트의 백업/복구 훈련·예약과 FCM 최소 권한/공개 VAPID·실기기 수신을 차례로 처리합니다.
 
-## 다음 작업
-
-1. 최신 환경의 10개 도메인 적용과 Hosting 새 연결은 확인 완료했습니다. 도메인을 다시 입력하도록 요청하지 않습니다. 기존 18명 계정을 재발급하거나 원본 비밀번호 열을 읽지 않습니다. 비공개 PIN 전달 파일은 운영자가 안전하게 보관하며 Git checkout에는 포함하지 않습니다.
-2. 실제 Hosting 주소에서 운영자가 기존 발급 PIN 또는 Google 로그인을 직접 입력한 뒤 학생·교사 화면·권한, 앱 내부 `↻ 새로고침`, 교사 Google 인증 완료를 검증합니다. 비밀번호나 인증 코드를 채팅에 요청하지 않습니다. 팝업 표시만으로 Google 인증 완료를 보고하지 않습니다.
-3. CPU·무료 쿼터 관찰과 README의 단일 문서 700KB, 백업·복구·삭제 일정, FCM 등의 미완료 요구사항을 처리합니다. 결제 연결이나 유료 업그레이드로 우회하지 않습니다.
-
-## 이후 코드 배포
-
-`VITE_API_BASE`는 위 API 주소여야 합니다. 비우면 과거 callable Functions를 사용합니다. 전용 서버 자격 증명은 Wrangler secrets에만 두며 운영자 OAuth refresh token은 배포하지 않습니다.
-
-```sh
-npm test
-npm run worker:check
-npm run build
-npm --prefix functions run build
-npx -y wrangler@latest deploy
-npx -y firebase-tools@latest deploy --only hosting --project wooriban-2027
-```
-
-Rules 변경은 `npx -y firebase-tools@latest deploy --only firestore:rules --project wooriban-2027`로 별도 배포합니다. 전체 deploy나 Functions·Secret Manager 배포를 실행하지 않습니다.
+PR은 아직 초안입니다. Hosting·운영 인증·실기기·운영 백업 검증까지 끝난 상태로 표시하지 않습니다. 새 코드를 배포할 때 기존 계정/PIN 재발급·기존 비밀번호 조회·결제 연결로 우회하지 않습니다.
