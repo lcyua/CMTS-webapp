@@ -9,7 +9,7 @@
 - 원본 시트의 학번·이름 두 열만 읽어 학생 18명을 검증하고 `--workers`로 한 번 발급. 기존 비밀번호 값은 조회하지 않음. 새 PIN은 Git에서 제외한 권한 600의 비공개 전달 파일에 보관. 기존 학급·계정·PIN을 다시 초기화하지 않음.
 - Functions와 Secret Manager 배포를 실제 실행했으나 Spark 요금제에서는 필요한 API를 활성화할 수 없어 실패. 사용자가 결제 계정 연결을 원하지 않으므로 Blaze 전환 및 유료 리소스 설정은 진행하지 않음.
 - Firebase Hosting/Auth/Firestore는 Spark 유지, 서버 검증·토큰 발급·업무 명령은 Cloudflare Workers에 실제 배포. 결제·유료 구독은 추가하지 않았고 배포 후 Google Cloud Billing API에서 결제 미연결 상태 확인. 상세 권한·CPU·잔여 검증은 `worker/README.md` 참조.
-- Hosting `https://wooriban-2027.web.app` 및 API `https://wooriban-2027-api.wooriban-2027.workers.dev` 배포 완료. Hosting live release를 API에서 확인. 화면 접속은 환경 프록시 CONNECT 403 / Chromium ERR_TUNNEL_CONNECTION_FAILED로 차단되어 브라우저·Google 팝업·실기기 검증은 남음.
+- Hosting `https://wooriban-2027.web.app` 및 API `https://wooriban-2027-api.wooriban-2027.workers.dev` 배포 완료. Hosting live release를 API에서 확인. 2026-11-13 최신 환경에서 이전 접속 차단 해소, 실제 로그인 화면·학번 18개·모바일 폭·Google 로그인 팝업 표시·비로그인 새로고침·서비스 워커 활성화 확인. 실제 인증 후 유지·새로고침·로그아웃과 실기기 검증은 남음. 상세 결과는 `NEXT-STEPS.md` 참조.
 - 로컬 테스트 28개, Worker strict 검사, 프런트·Functions 호환 빌드 통과. 실서버에서 18명 모두 새 PIN 로그인·Firebase 토큰 교환·학급 조회 성공. 교사 membership, 학생 지급 권한 거부, 직접 Rules 읽기/쓰기 거부, 위조/철회 토큰·비활성 계정 거부, 임시 문서 동시 동일 요청 6회의 단일 반영을 확인. 실제 학생에게 테스트 포인트는 지급하지 않음. 이전 Auth/Functions/Firestore Emulator 통합 검사도 통과했으며 실제 브라우저 검증과는 구분함.
 - 통합 검증 실행: `npx -y firebase-tools@latest --config firebase.emulator.json emulators:exec --project demo-class-portal --only auth,firestore,functions 'npx tsx scripts/test-emulator.ts'`. 호스트 8080 포트 점유를 피하도록 테스트용 Firestore는 8180을 사용. Functions 비밀값은 Git에서 제외된 `functions/.secret.local`에 테스트 전용 값만 설정.
 
