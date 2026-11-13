@@ -1,148 +1,79 @@
-# 우리반 Firebase PWA — 구현 1차
+# 우리반 학급 포털
 
-## 실제 Firebase 연결 진행 상황 (2026-11-12)
+2027학년도 전북기계공업고등학교 1학년 11반의 공지·포인트·상점·학급생활·문제풀이·시험 신청 포털입니다. React 19·TypeScript·Vite 프런트와 Firebase Spark의 Auth·Firestore·Hosting, Cloudflare Workers Free 서버를 사용합니다. 결제 계정·Blaze·Workers 유료 구독을 연결하지 않습니다.
 
-- Firebase CLI 15.36.0 운영자 로그인과 `wooriban-2027` 프로젝트 접근 확인.
-- 기존 웹앱 SDK 설정을 비공개 `.env.local`로 조회·연결. 학급 ID는 `2027-1-11`.
-- 서울 `asia-northeast3`에 Standard 기본 Firestore 생성 완료. 클라이언트 직접 접근을 모두 거부하는 Rules를 실제 배포 완료.
-- Firebase Auth의 Google 및 이메일/비밀번호 제공자 설정 배포 완료. 교사 1명·학생 18명의 학급 membership과 2027학년도·0점 초기 상태 구성 완료.
-- 원본 시트의 학번·이름 두 열만 읽어 학생 18명을 검증하고 `--workers`로 한 번 발급. 기존 비밀번호 값은 조회하지 않음. 새 PIN은 Git에서 제외한 권한 600의 비공개 전달 파일에 보관. 기존 학급·계정·PIN을 다시 초기화하지 않음.
-- Functions와 Secret Manager 배포를 실제 실행했으나 Spark 요금제에서는 필요한 API를 활성화할 수 없어 실패. 사용자가 결제 계정 연결을 원하지 않으므로 Blaze 전환 및 유료 리소스 설정은 진행하지 않음.
-- Firebase Hosting/Auth/Firestore는 Spark 유지, 서버 검증·토큰 발급·업무 명령은 Cloudflare Workers에 실제 배포. 결제·유료 구독은 추가하지 않았고 배포 후 Google Cloud Billing API에서 결제 미연결 상태 확인. 상세 권한·CPU·잔여 검증은 `worker/README.md` 참조.
-- Hosting `https://wooriban-2027.web.app` 및 API `https://wooriban-2027-api.wooriban-2027.workers.dev` 배포 완료. Hosting live release를 API에서 확인. 2026-11-13 최신 환경에서 이전 접속 차단 해소, 실제 로그인 화면·학번 18개·모바일 폭·Google 로그인 팝업 표시·비로그인 새로고침·서비스 워커 활성화 확인. 같은 날 사용자가 자신의 브라우저에서 자동로그인, 브라우저 새로고침 후 로그인 유지, 로그아웃 후 새로고침 시 비로그인 상태를 직접 확인함. 에이전트의 독립 재현 결과는 아니며 계정 역할·로그인 방식은 확인되지 않음. 앱 내부 새로고침, 역할별 화면·권한, 교사 Google 인증 완료와 실기기 PWA 검증은 남음. 상세 결과는 `NEXT-STEPS.md` 참조.
-- 로컬 테스트 28개, Worker strict 검사, 프런트·Functions 호환 빌드 통과. 실서버에서 18명 모두 새 PIN 로그인·Firebase 토큰 교환·학급 조회 성공. 교사 membership, 학생 지급 권한 거부, 직접 Rules 읽기/쓰기 거부, 위조/철회 토큰·비활성 계정 거부, 임시 문서 동시 동일 요청 6회의 단일 반영을 확인. 실제 학생에게 테스트 포인트는 지급하지 않음. 이전 Auth/Functions/Firestore Emulator 통합 검사도 통과했으며 실제 브라우저 검증과는 구분함.
-- 통합 검증 실행: `npx -y firebase-tools@latest --config firebase.emulator.json emulators:exec --project demo-class-portal --only auth,firestore,functions 'npx tsx scripts/test-emulator.ts'`. 호스트 8080 포트 점유를 피하도록 테스트용 Firestore는 8180을 사용. Functions 비밀값은 Git에서 제외된 `functions/.secret.local`에 테스트 전용 값만 설정.
+- 실제 서비스: https://wooriban-2027.web.app
+- API: https://wooriban-2027-api.wooriban-2027.workers.dev
+- 저장소 작업: [PR #1](https://github.com/lcyua/CMTS-webapp/pull/1), `setup/firebase-workers-free`
+- Firebase 프로젝트 `wooriban-2027`, 학급 `2027-1-11`, Standard Firestore `asia-northeast3`
 
-아래의 기존 구현·미완료 목록은 이 현황을 기준으로 읽어야 합니다. 결제 없이 운영하려면 기존 `firebase deploy --only functions` 방식으로는 완료할 수 없습니다.
+## 배포와 검증 상태
 
-React 19 / TypeScript / Vite, Firebase Auth와 callable Functions 연결. 학생·교사 데모를 제공합니다. 기존 평문 비밀번호는 포함하지 않습니다.
+현재 서비스는 2026-11-12 배포본입니다. Hosting live 버전은 `293841b2aa5c57a6`, Worker 버전은 `04f64559-5bfd-4c06-91cd-fd0c030377e7`입니다. 2026-11-13 사용자가 자동로그인, 브라우저 새로고침 후 로그인 유지, 로그아웃 후 새로고침 시 비로그인 상태를 직접 확인했습니다. 계정 역할·로그인 방식까지 확인한 보고는 아닙니다.
 
-## 실행
+후속 소스에는 필드별 교사 설정 편집기, 제출된 문제의 내용 보호, 대기 시험 신청 수정 폼, 이력 분리 저장·서버 커서 조회, 백업·복구 도구, PWA 개선과 선택형 FCM을 추가했습니다. 이 개선 사항은 로컬 구현·검증 단계이며 아직 운영 서비스에 재배포하지 않았습니다. 현재 작업 환경의 Firebase CLI와 Wrangler는 운영자 계정에 로그인돼 있지 않습니다. 운영 인증정보는 Git checkout에 포함되지 않습니다.
+
+PWA는 격리된 Chromium에서 10개 시나리오를 통과했습니다. HTML·빌드 번들 사전 캐시, 첫 오프라인 새로고침, 온라인 복귀, 명시적 업데이트 적용, 실패한 업데이트 거부와 정상 버전 보존, API·Auth 응답 캐시 제외를 확인했고 Chromium의 설치 가능성 오류는 없었습니다. Android/iOS 실기기 설치·실수신 결과는 아닙니다. 상세 진행 상태는 [NEXT-STEPS.md](NEXT-STEPS.md), 사용자 안내는 [RELEASE-v1.md](RELEASE-v1.md)를 봅니다.
+
+## 기존 계정과 PIN 유지
+
+학생 18명과 교사 1명의 학급 구성이 이미 존재합니다. **현재 학급의 발급·초기화 도구를 다시 실행하지 않습니다.** 기존 계정·PIN·포인트를 덮어쓰거나 가상 데이터를 실제 학급에 넣지 않습니다. 원본 학생 비밀번호 열도 조회하거나 사용하지 않습니다.
+
+학생은 실제 서비스에서 학번을 선택하고 이미 발급된 4자리 PIN을 입력합니다. 앞자리 `0`도 포함하는 문자열입니다. PIN 전달 파일은 `imports/student-login-codes.private.json`이며 운영자가 별도로 안전하게 보관합니다. `imports/`는 Git·소스 ZIP·정적 Hosting에서 제외되므로 일반 소스 ZIP만으로는 PIN을 알 수 없습니다. 파일·PIN·서버 키·pepper·OAuth 인증정보를 채팅이나 공개 문서에 넣지 않습니다.
+
+교사는 기존 개인 계정으로 로그인합니다. 런타임 전용 서비스 계정에는 Auth 계정 생성·변경·삭제 권한이 없으며 학생 재발급에 사용하지 않습니다.
+
+## 서버와 데이터
+
+브라우저는 Firebase Auth로 인증하고 Worker에 ID token을 보냅니다. Worker가 서명·만료·철회·비활성 계정·학급 membership·역할·기록 소유권을 검사합니다. Firestore Rules는 클라이언트의 직접 읽기·쓰기를 모두 거부합니다. 현재 무료 운영 경로에 Functions와 Secret Manager를 배포하지 않습니다. `functions/`는 호환 코드와 로컬 에뮬레이터 검사용입니다.
+
+후속 저장소 구현은 기본 학급 문서와 늘어나는 이력을 분리하고 학생별 조회 사본·요청 영수증·포인트 요약을 유지합니다. 서버 커서로 과거 기록을 조회하며 Firestore updateTime 사전조건으로 원장·요청·영수증을 함께 반영합니다. 현재 운영 데이터의 전환·새 코드의 무료 CPU·쿼터 실측은 아직 실행하지 않았습니다. 기본 설정 문서의 700KB 상한과 개별 명령의 조회·쓰기 한도는 남습니다. 분리 저장 백업과 세대 전환 복구의 정확한 범위는 [OPERATIONS.md](OPERATIONS.md)를 따릅니다.
+
+## 로컬 실행
+
+Node 22 이상에서 실행합니다.
 
 ```sh
-npm ci --cache /tmp/portal-npm-cache
+npm ci
 npm run dev
+```
+
+실제 Firebase 연결은 `.env.example`을 참고해 비공개 `.env.local`에 공개 웹 SDK 설정을 작성합니다. 기존 파일을 덮어쓰지 않습니다. 학급 ID는 `2027-1-11`, `VITE_API_BASE`는 위 Worker API 주소여야 합니다. API 주소가 비면 과거 callable Functions 경로를 사용하므로 운영 빌드에서는 비우지 않습니다. 서버 키·pepper를 `VITE_*`에 넣지 않습니다.
+
+실제 서비스와 분리된 로컬 가상 데모는 다음처럼 실행할 수 있습니다.
+
+```sh
+VITE_FIREBASE_PROJECT_ID='' npm run dev
+```
+
+데모 학번은 `01101`·`01102`, 코드는 `2468`이며 실제 학생 PIN과 관계없습니다. 교사 데모 버튼도 제공합니다. 데모의 학급 업무 데이터는 페이지 재실행 시 초기화됩니다. 실제 명단이나 기록을 데모에 입력하지 않습니다.
+
+## 검사와 범위를 지정한 배포
+
+```sh
 npm test
+npm run worker:check
 npm run build
-npm --prefix functions ci --cache /tmp/portal-npm-cache
-npm --prefix functions run build
+npm run ops:check
 ```
 
-Firebase 설정이 없으면 **가상 데이터·메모리 전용 데모**입니다. 새로고침 시 초기화되며 데모 역할 선택은 인증이 아닙니다. 실제 학생 자료를 데모에 입력하지 마세요.
+Functions 호환 검사가 필요하면 `npm --prefix functions ci`와 `npm --prefix functions run build`를 별도로 실행합니다. 새 서버·저장 구조·푸시 큐에는 배포 후 실제 Firebase 권한·일관성·무료 CPU·쿼터 검증이 추가로 필요합니다. 로컬 모의 전송·에뮬레이터·가상 데모 결과를 운영 검증으로 간주하지 않습니다.
 
-## Firebase 연결
-
-1. 현재 무료 운영 경로는 Firebase Auth/Firestore/Hosting + Cloudflare Workers입니다. 기존 Functions는 호환 코드로 보존하며 Spark 운영에는 배포하지 않습니다.
-2. `.env.example`을 `.env.local`로 복사하고 프로젝트의 웹 앱 설정을 입력합니다. 이 값은 공개 클라이언트 설정입니다. 서비스 계정 비밀키를 프런트에 넣지 않습니다.
-3. 실제 Auth UID를 기준으로 학급 membership을 관리자 도구로 프로비저닝해야 합니다. 소스의 teacher/student1은 데모 전용 UID입니다.
-4. 학급 데이터 경로는 `classes/{classId}/private/state`입니다. 현재 학급은 발급 도구로 이미 초기화했습니다. 클라이언트 직접 접근과 가상 seed의 실제 학급 사용을 금지하며 기존 학급을 재초기화하지 않습니다.
-5. `NEXT-STEPS.md`의 범위를 지정한 배포 명령을 사용합니다. Hosting은 `npx -y firebase-tools@latest deploy --only hosting --project wooriban-2027`, 서버는 `npx -y wrangler@latest deploy`로 배포합니다. 전체 Firebase deploy를 실행하지 않습니다.
-
-## 구현 범위
-
-- 학생·교사 화면, 공지·중요 정렬·첨부 HTTPS 제한, 포인트 내역
-- 상점 lot별 FIFO 예약·승인·반려·취소, 달력 3개월 만료·원만료 유지
-- 개별 지급·차감, 월·역할·UID별 중복 방지 일괄 보상
-- 일일 퀴즈 1회·서버 채점·제출 전 해설 제거
-- UID 역할 배정, 좌석·청소 위임·버전 충돌·중복 검사
-- 시험 신청·취소·교사 처리·필터·문자열 셀 XLSX 다운로드
-- 앱 내 알림·읽음, 운영 JSON 편집, 변경 감사 기록
-- 정적 파일 전용 서비스 워커, 매니페스트, 메모리 인증
-
-## 실운영 전 남은 작업 — 반드시 확인
-
-이 버전은 **검토 가능한 기능 프로토타입**입니다. 설계의 전체 프로덕션 구현을 완료한 상태가 아닙니다.
-
-- 현재 서버는 클래스별 비공개 단일 문서를 Firestore 트랜잭션으로 처리합니다. 700KB 제한으로 원자 거부하며 학급 전체가 경합할 수 있습니다. 설계대로 컬렉션 분리·인덱스·커서 페이지·최소 조회로 이전해야 합니다. 화면의 더 보기는 가져온 데이터의 표시 범위 확대입니다.
-- Firestore Rules는 모든 클라이언트 직접 접근을 거부하며 Worker가 인증·membership·소유권을 검증합니다. 실제 API·Rules·동시 commit 검증은 통과했으나 실제 Hosting 브라우저·실기기 검증은 남아 있습니다.
-- 예약 승인 후 정정, 만료 배치·요약 정산, 대량 지급 큐·중간 실패 재개, 백업·복구·삭제 스케줄은 미구현입니다. 사용 가능액 계산에서 만료 lot은 즉시 제외합니다.
-- 시험 대기 건 수정은 도메인 명령에 있으나 화면 편집 폼은 후속 작업입니다. 내보내기는 클라이언트의 교사 전용 메모리 데이터에 적용되며 서버 측 감사·스트리밍 내보내기를 추가해야 합니다.
-- 운영 설정은 JSON 편집기입니다. 필드별 편집 UI·완전한 스키마 검증·문제 버전 동결·공개 명부 축약 정책을 보완해야 합니다.
-- 학번·4자리 PIN 로그인 및 1회 발급은 구현·실배포했습니다. 중단 작업의 복구·교사 PIN 재설정 화면은 후속 작업입니다. 비활성 계정은 실제 API 검사에서 거부됨을 확인했습니다.
-- 알림은 앱 내 목록만 동작합니다. FCM 구독·발송 큐·로그아웃 기기 정리·iOS 실수신은 미구현입니다.
-- 기본 PNG 아이콘은 단색 자리표시자입니다. 실제 배포 전 브랜드 아이콘으로 교체하고 Android/iOS standalone 설치를 확인해야 합니다.
-- 첨부 시트 수식·기존 잔액 대조·실제 데이터 이전·학교 외부 시스템 연동은 미수행입니다.
-
-핵심 도메인 테스트는 만료·FIFO·중복 키·상태 경쟁 방지·권한·배치 버전·시험 중복을 검증합니다. 실제 Firebase와 기기 검증을 대신하지 않습니다.
-
-## Emulator에서 실제 Auth/Functions 경로 검토
-
-Firebase CLI 설치 후 프로젝트 루트에서:
+운영자 CLI 인증과 기존 Wrangler secrets가 준비된 뒤 서버를 먼저 배포하고 확인한 다음 Hosting을 배포합니다. 이 명령은 배포 범위를 제한하는 예시이며 현재 작업에서 새 배포를 실행했다는 뜻은 아닙니다.
 
 ```sh
-npm --prefix functions run build
-firebase emulators:start --project demo-class-portal
+npx -y wrangler@latest deploy --dry-run --outdir work/worker-build
+npx -y wrangler@latest deploy
+npx -y firebase-tools@latest deploy --only hosting --project wooriban-2027
 ```
 
-다른 터미널에서:
+Rules를 실제로 변경한 경우에만 `npx -y firebase-tools@latest deploy --only firestore:rules --project wooriban-2027`로 별도 배포합니다. 전체 Firebase deploy, Functions·Secret Manager 배포나 결제 연결로 우회하지 않습니다.
 
-```sh
-FIRESTORE_EMULATOR_HOST=127.0.0.1:8080 FIREBASE_AUTH_EMULATOR_HOST=127.0.0.1:9099 npx tsx scripts/init-emulator.ts
-```
+## 운영과 남은 검증
 
-웹 설정에서 project ID를 `demo-class-portal`, authDomain을 `demo-class-portal.firebaseapp.com`, apiKey를 `demo-api-key`, appId를 `demo-app`, `VITE_USE_EMULATORS=true`로 설정합니다. 로컬 계정은 `teacher@example.test`, `student1@example.test`, `student2@example.test`, 비밀번호는 `EmulatorOnly-2026!`입니다. 이 계정은 로컬 Emulator 전용입니다. 초기화 스크립트는 로컬 Emulator 주소만 허용하고 기존 데이터를 덮어쓰지 않습니다.
+- [OPERATIONS.md](OPERATIONS.md): 계획 출력이 기본인 백업·복구·로컬 보관 정리·제한 문서 정리 도구. 실제 운영 백업·복구·cron 등록은 미실행입니다. 원본 학생·감사 기록 삭제 일정은 학교의 보관 정책과 별도로 정해야 합니다.
+- [docs/PUSH.md](docs/PUSH.md): FCM은 기본 꺼짐입니다. 사용자 동의·기기 등록·발송 큐·로그아웃 정리를 구현했으나 공개 VAPID 설정, FCM API·최소 IAM 구성, 무료 한도 관찰과 실제 기기 수신은 남습니다. 앱 내 알림은 푸시 활성화와 관계없이 동작합니다.
+- 운영자 Google 인증 완료, 실제 학생·교사별 화면·권한, 앱 내부 새로고침, 실제 Android/iOS 설치는 운영 계정·기기로 확인해야 합니다. Google 팝업 표시만으로 인증 완료를 보고하지 않습니다.
+- 승인된 신청 정정·대규모 배치 작업의 재개·학교 외부 시스템 연동 등은 구현 범위가 별도로 남습니다. 새 소스 배포·이관·운영 복구 훈련까지 끝난 상태로 표시하지 않습니다.
 
-## 이번 검증 결과
-
-- `npm test`: 도메인 테스트 8개 통과.
-- `npm run build`: TypeScript 검사와 Vite 배포 빌드 통과.
-- `npm --prefix functions run build`: 서버 TypeScript 빌드 통과.
-- 브라우저 QA: `sites-preview` relay port 4173 readiness timeout으로 미실행. 실제 모바일 설치·알림 검증도 미실행.
-
-## 연결된 웹 앱 설정
-
-사용자가 제공한 `wooriban-2027` 웹 앱 설정을 `.env.local`에 연결했습니다. 새 빌드는 데모가 아닌 Firebase 이메일/Google 로그인을 사용합니다. 학급 ID는 기존 `2026-1-11`을 유지했습니다. 프로젝트 이름과 학급 학년도는 별도 설정입니다. 웹 설정만으로 서버 배포·계정 발급·membership 생성이 완료되지는 않습니다.
-
-Firebase Functions `portal`, Auth 로그인 제공자, 실제 UID 학급 초기화가 필요합니다. 현재 환경에서 Functions URL 접근은 프록시 CONNECT 403으로 차단되어 원격 상태를 확인하지 못했습니다.
-
-## 확인용 비공개 데모 배포
-
-- URL: https://wooriban-2027-review.flowinglapwing8.chatgpt.site
-- 배포 소스: `/workspace/sites/wooriban-review`
-- 가상 데이터·메모리 전용으로 동작하며 Firebase 실서비스와 분리됩니다.
-- Sites 배포 상태 succeeded 확인. 클라우드 브라우저에서는 네트워크 터널 오류로 UI 검증 불가.
-- Firebase 설정 빌드 시 `import.meta.env`를 직접 참조하도록 수정했습니다.
-
-## 화면 검토 반영 (2026-11-12)
-
-홈 홍보 문구·푸터·감사 이력 화면 제거, 포인트 잔액 강조, 문제풀이 탭과 홈 하단 바로가기 추가. 공지·상점 화면에서 교사 전용 폼 편집 가능. 포인트 지급항목/포인트현황 하위 탐색 추가. 학급생활 기타수당 제거, 일반 학생 배치 조회 전용, 좌석은 실장 위임 학생만 저장 가능. 감사 원본 기록은 보존. 상단 알림 수신 스위치·알림내역·교사 유형별 자동 알림 설정 추가. 앱 내 알림만 적용하며 FCM은 별도 작업. 도메인 테스트 11개 통과.
-
-## 실제 학생 명단 이전 준비
-
-`./scripts/roster-template.csv`의 studentNo,name,email 열로 명단을 준비합니다. 학번 셀은 텍스트로 유지하세요. 비밀번호·개인 연락처는 포함하지 않습니다. 실제 명단은 Git에 추가하지 않는 `imports/` 폴더에 둡니다.
-
-검증: `npx tsx scripts/import-roster.ts --file imports/명단.csv`
-
-실제 등록은 관리 권한 ADC 인증과 활성 Firebase Auth 계정이 준비된 환경에서만 실행합니다. 서비스 계정 키는 채팅·소스에 포함하지 않습니다.
-
-`npx tsx scripts/import-roster.ts --file imports/명단.csv --apply --teacher-email 교사이메일 --teacher-name 교사명 --year 2027 --class-name "1학년 11반" --class-id 2027-1-11`
-
-실행 대상은 wooriban-2027로 고정되어 있으며 기존 학급은 덮어쓰지 않습니다. 신규 명부의 초기 잔액은 0입니다. 검증된 과거 원장 없이는 샘플 100점이나 임의 기초잔액을 지급하지 않습니다. 이 도구는 Firebase Auth 계정·비밀번호를 생성하거나 변경하지 않고 기존 활성 계정 UID를 조회해 연결합니다. 현재 실제 명단·관리 인증이 없어 실행하지 않았습니다. 서버는 기존 시범 운영 어댑터로, 컬렉션 분리·통합 권한 검증 등 실운영 전 남은 작업은 위 항목을 참조하세요.
-
-## 학생 학번 + 숫자 4자리 로그인
-
-학생 화면은 학번·4자리 숫자 코드를 받고 `studentLogin` callable에서 검증한 뒤 Firebase custom token으로 로그인합니다. 교사는 개인 계정 로그인 유지. 코드는 선행 0을 포함하는 문자열이며 네 자리 숫자 이외의 입력을 거부합니다.
-
-서버 전용 `STUDENT_PIN_PEPPER` 비밀값(32자 이상)을 Secret Manager에 설정해야 합니다. 발급 도구에도 같은 값을 환경변수로 제공합니다. 값은 채팅·Git·프런트 번들·공개 파일에 넣지 않습니다. `pinAccounts` 문서는 클라이언트 직접 읽기/쓰기를 거부하며 HMAC + salt + scrypt 결과만 저장합니다. 학번별 15분 동안 5회 실패/진행 중 시도, IP별 50회 제한을 둡니다. 성공한 시도는 카운터에서 차감합니다. loginLimits.expiresAt에는 Firestore TTL 정책을 운영 설정으로 추가해야 합니다.
-
-명단 점검: `npx tsx scripts/provision-student-pins.ts --file imports/roster-pending.json`
-
-실제 발급은 관리 ADC 인증·네트워크·서버 비밀값과 교사 Auth 계정 준비 후 `--workers --apply --class-id ... --teacher-email ... --teacher-name ... --year ... --class-name ...`로 실행합니다. 현재 학급 18명은 발급 완료하여 다시 실행하지 않습니다. 중단 작업도 자동 재발급하지 않습니다. 코드는 권한 600의 `imports/student-login-codes.private.json`에만 저장하여 교사가 학생별로 전달합니다. 소스 배포·ZIP에서는 imports를 제외합니다. 기존 시트 비밀번호는 사용하지 않습니다. 계정 발급·실제 API 로그인은 검증했으며 Hosting 브라우저·실기기 검증은 남아 있습니다. 교사용 코드 초기화 화면은 후속 작업이며 잠금은 15분 뒤 해제됩니다.
-
-가상 데모는 01101/01102 + 2468로 화면 흐름만 확인합니다. 이는 실제 학생 학번·코드와 관계없는 데모 값입니다. Firebase Auth·트랜잭션·호출 제한 통합 검증은 별도로 필요합니다.
-
-## 선택형 자동로그인
-
-학생·교사 로그인 화면의 '로그인 유지 · 개인 기기'를 선택하면 Firebase SDK browserLocalPersistence로 세션을 보존합니다. 다음 실행은 인증 상태를 복원한 후 서버에서 학급 소속·활성 상태를 재확인합니다. 코드·비밀번호를 자체 localStorage에 저장하지 않습니다. 선택하지 않으면 메모리 세션을 사용합니다. 로그아웃은 저장된 세션을 제거하고 다른 탭의 Auth 변경도 반영합니다.
-
-데모는 선택한 가상 UID만 보존하며 포인트·신청 등 데모 데이터는 계속 초기화됩니다. 소스·배포본에 실제 명단과 코드를 포함하지 않습니다. 자동로그인은 브라우저 데이터 삭제·로그아웃 시 종료되며 브라우저가 저장을 차단하면 재로그인이 필요합니다. 실제 Firebase 인증 복원은 관리 접근 차단으로 실서비스 검증하지 못했습니다.
-
-홈 메뉴 제거, 브랜드 버튼 홈 이동, 학생 포인트 카드 축소, 공통 완료 문구 제거도 반영했습니다.
-
-## 학번 선택 UI
-
-학생 로그인은 학번 드롭다운과 비밀번호(4자리 숫자)로 표시합니다. 서버의 studentLoginOptions는 활성 학생 학번만 반환하며 이름·UID·비밀번호·포인트를 반환하지 않습니다. 이는 사용자가 요청한 로그인용 학번 선택 목록이며, 실제 명단은 프런트 번들에 넣지 않습니다. Firebase 배포 시 studentLoginOptions도 배포해야 합니다. 현재 Sites에는 가상 학번 01101/01102만 표시합니다.
-
-## 주황 톤앤톤 UI
-
-메인 주황 #BF4B08, 살구색 배경 #FFF8F1, 강조 면 #FFEAD5, 짙은 갈색 본문 #482E20을 공통 토큰으로 적용했습니다. 모바일 테마색·설치 아이콘도 동일하게 변경했습니다. 버튼 흰 글자 대비 4.97:1, 본문 대비 11.82:1, 살구색 배경의 보조 문구 대비 4.92:1을 확인했습니다. Firebase 공식 플러그인으로 실배포 관리 연결을 준비 중이며 연결 확인 전에는 실계정 등록·실서비스 배포 완료로 표시하지 않습니다.
+과거 시점의 구현 기록은 [docs/IMPLEMENTATION-HISTORY.md](docs/IMPLEMENTATION-HISTORY.md)에 보존했습니다. 현재 운영에는 이 README와 연결된 운영 문서를 사용합니다.

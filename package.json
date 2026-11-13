@@ -6,7 +6,9 @@
     "dev": "vite --host 0.0.0.0",
     "build": "tsc --noEmit && vite build",
     "test": "tsx --test tests/*.test.ts",
-    "worker:check": "tsc --noEmit --strict --skipLibCheck --target ES2022 --module ESNext --moduleResolution bundler --lib ES2022,DOM worker/index.ts"
+    "worker:check": "tsc --noEmit --strict --skipLibCheck --target ES2022 --module ESNext --moduleResolution bundler --lib ES2022,DOM worker/index.ts",
+    "ops:plan": "bash scripts/maintenance-daily.sh",
+    "ops:check": "tsx --test tests/maintenance.test.ts"
   },
   "dependencies": {
     "firebase": "^11.0.0",
