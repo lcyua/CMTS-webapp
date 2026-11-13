@@ -1,0 +1,15 @@
+{
+  "name": "wooriban-2027-api",
+  "account_id": "046268350e5930f25adaed2e20fe1df7",
+  "main": "worker/index.ts",
+  "compatibility_date": "2026-11-12",
+  "workers_dev": true,
+  "preview_urls": false,
+  "triggers": {"crons": ["*/5 * * * *"]},
+  "vars": {
+    "FIREBASE_PROJECT_ID": "wooriban-2027",
+    "CLASS_ID": "2027-1-11",
+    "PUSH_ENABLED": "false",
+    "ALLOWED_ORIGINS": "https://wooriban-2027.web.app,https://wooriban-2027.firebaseapp.com"
+  }
+}

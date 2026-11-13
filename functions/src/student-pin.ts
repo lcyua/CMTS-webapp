@@ -12,7 +12,4 @@ export async function verifyPin(pin:string,pepper:string,salt:string,hash:string
  if(!validPin(pin)||!/^[a-f0-9]{32}$/.test(salt)||!/^[a-f0-9]{64}$/.test(hash))return false;
  const result=await hashPin(pin,pepper,salt);return timingSafeEqual(Buffer.from(result.hash,'hex'),Buffer.from(hash,'hex'));
 }
-export function nextAttempt(previous:{start:number;count:number}|undefined,now:number,limit:number){
- const state=!previous||now>=previous.start+15*60*1000?{start:now,count:0}:{...previous};
- if(state.count>=limit)throw Error('rate-limit');state.count++;return state;
-}
+export {nextAttempt} from '../../src/login-rate';

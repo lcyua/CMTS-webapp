@@ -5,6 +5,10 @@ dist/
 functions/lib/
 .firebase/
 *-debug.log
+functions/.secret.local
+.wrangler/
+.dev.vars*
+work/
 
 imports/
 roster*.xlsx
