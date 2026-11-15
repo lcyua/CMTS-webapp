@@ -1,6 +1,6 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {encode,decode,Store,accessToken} from '../worker/store';
+import {encode,decode,Store,accessToken,UpstreamError,Conflict} from '../worker/store';
 import {generateKeyPair,exportPKCS8,jwtVerify} from 'jose';
 import {pinPassword} from '../worker/credentials';
 import {nextAttempt} from '../src/login-rate';
@@ -53,6 +53,11 @@ test('REST invalid arguments fail immediately instead of retrying as conflicts',
   await assert.rejects(store.change(['state'],()=>({values:[{count:1}],result:null})),/Database unavailable \(400\)/);
   assert.equal(commits,1);
  }finally{globalThis.fetch=original;}
+});
+test('query FAILED_PRECONDITION is an upstream failure rather than a commit conflict',async()=>{
+ const original=globalThis.fetch;let calls=0;
+ globalThis.fetch=async()=>{calls++;return Response.json({error:{status:'FAILED_PRECONDITION',message:'Synthetic query failure'}},{status:400});};
+ try{const store=new Store('demo-class-portal',async()=>'fixture');await assert.rejects(store.request(`${store.base}/classes/fixture:runQuery`,{method:'POST',body:'{}'}),error=>error instanceof UpstreamError&&!(error instanceof Conflict)&&error.upstreamStatus===400&&error.upstreamCode==='FAILED_PRECONDITION');assert.equal(calls,1);}finally{globalThis.fetch=original;}
 });
 test('concurrent server authentication shares one exchange and recovers after failure',async()=>{
  const original=globalThis.fetch;const {privateKey,publicKey}=await generateKeyPair('RS256',{extractable:true});

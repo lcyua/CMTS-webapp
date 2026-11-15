@@ -1,5 +1,7 @@
 import {importPKCS8, SignJWT} from 'jose';
-export class UpstreamError extends Error {}
+export class UpstreamError extends Error {
+ constructor(message:string,readonly upstreamStatus?:number,readonly upstreamCode?:string){super(message);}
+}
 export interface ServiceAccount {client_email:string;private_key:string;project_id:string}
 export interface Document {name:string;fields:Record<string,any>;updateTime:string}
 export const encode=(v:any):any=>v===null?{nullValue:null}:v instanceof Date?{timestampValue:v.toISOString()}:typeof v==='string'?{stringValue:v}:typeof v==='boolean'?{booleanValue:v}:typeof v==='number'?(Number.isInteger(v)?{integerValue:String(v)}:{doubleValue:v}):Array.isArray(v)?{arrayValue:{values:v.map(encode)}}:{mapValue:{fields:Object.fromEntries(Object.entries(v).map(([k,x])=>[k,encode(x)]))}};
@@ -18,7 +20,7 @@ export async function accessToken(sa:ServiceAccount){
  const promise=(async()=>{
   const assertion=await new SignJWT({scope:'https://www.googleapis.com/auth/cloud-platform https://www.googleapis.com/auth/firebase'}).setProtectedHeader({alg:'RS256'}).setIssuer(sa.client_email).setAudience('https://oauth2.googleapis.com/token').setIssuedAt().setExpirationTime('1h').sign(await signingKey(sa));
   const r=await fetch('https://oauth2.googleapis.com/token',{method:'POST',body:new URLSearchParams({grant_type:'urn:ietf:params:oauth:grant-type:jwt-bearer',assertion})});
-  if(!r.ok){await r.body?.cancel();throw new UpstreamError('Server authentication unavailable');}const data=await r.json() as any;
+  if(!r.ok){await r.body?.cancel();throw new UpstreamError('Server authentication unavailable',r.status);}const data=await r.json() as any;
   if(typeof data.access_token!=='string'||!data.access_token||!Number.isFinite(data.expires_in))throw new UpstreamError('Server authentication unavailable');
   cached={identity,token:data.access_token,until:Date.now()+Math.max(0,data.expires_in-120)*1000};return cached.token;
  })();
@@ -31,14 +33,14 @@ export class Store {
  constructor(readonly project:string,readonly token:()=>Promise<string>){this.base=`https://firestore.googleapis.com/v1/projects/${project}/databases/(default)/documents`;}
  async request(url:string,init:RequestInit={}){
   const r=await fetch(url,{...init,headers:{'Content-Type':'application/json',Authorization:`Bearer ${await this.token()}`,...init.headers}});
-  if(r.status===409||r.status===412){await r.body?.cancel();throw new Conflict();}
   if(!r.ok){
-   // Firestore REST also reports stale updateTime preconditions as HTTP 400.
-   if(r.status===400){const error=await r.json().catch(()=>null) as {error?:{status?:string}}|null;if(['FAILED_PRECONDITION','ABORTED'].includes(error?.error?.status||''))throw new Conflict();}
-   if(!r.bodyUsed)await r.body?.cancel();throw new UpstreamError(`Database unavailable (${r.status})`);
+   const error=await r.json().catch(()=>null) as {error?:{status?:string}}|null;
+   // Query preconditions/index failures are not transaction conflicts and must not be retried.
+   if(url.endsWith(':commit')&&([409,412].includes(r.status)||r.status===400&&['FAILED_PRECONDITION','ABORTED'].includes(error?.error?.status||'')))throw new Conflict();
+   throw new UpstreamError(`Database unavailable (${r.status})`,r.status,error?.error?.status);
   }return r;
  }
- async get(path:string):Promise<Document|null>{const r=await fetch(`${this.base}/${path}`,{headers:{Authorization:`Bearer ${await this.token()}`}});if(r.status===404)return null;if(!r.ok){await r.body?.cancel();throw new UpstreamError('Database unavailable');}return r.json();}
+ async get(path:string):Promise<Document|null>{const r=await fetch(`${this.base}/${path}`,{headers:{Authorization:`Bearer ${await this.token()}`}});if(r.status===404)return null;if(!r.ok){await r.body?.cancel();throw new UpstreamError('Database unavailable',r.status);}return r.json();}
  async getMany(paths:string[]):Promise<(Document|null)[]>{
   if(paths.length===1)return [await this.get(paths[0])];
   const names=paths.map(path=>`projects/${this.project}/databases/(default)/documents/${path}`);

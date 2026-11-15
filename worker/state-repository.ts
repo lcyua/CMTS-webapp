@@ -33,11 +33,12 @@ function adjustBalance(meta:Metadata,record:RecordData,direction:number){
 }
 
 async function hash(value:string){return Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(value))),n=>n.toString(16).padStart(2,'0')).join('');}
-async function query(store:Store,collection:string,options:{field?:string;op?:string;value?:unknown;limit?:number;after?:string;complete?:boolean}={}):Promise<StoredRecord[]>{
- const slash=collection.lastIndexOf('/'),parent=collection.slice(0,slash),collectionId=collection.slice(slash+1);const maximum=options.limit??MAX_QUERY;const rows:StoredRecord[]=[];let after=options.after;let afterValues:any[]|undefined=after?[{referenceValue:after}]:undefined;
+async function query(store:Store,collection:string,options:{field?:string;op?:string;value?:unknown;limit?:number;after?:string;afterSequence?:number;complete?:boolean}={}):Promise<StoredRecord[]>{
+ const slash=collection.lastIndexOf('/'),parent=collection.slice(0,slash),collectionId=collection.slice(slash+1);const maximum=options.limit??MAX_QUERY;const rows:StoredRecord[]=[];let after=options.after;let afterValues:any[]|undefined;if(after){if(!options.field){if(!Number.isSafeInteger(options.afterSequence))throw Error('기록 커서가 올바르지 않습니다.');afterValues=[encode(options.afterSequence),{referenceValue:after}];}else afterValues=[{referenceValue:after}];}
  do{
   const pageLimit=Math.min(500,maximum-rows.length+(options.complete?1:0));
-  const structuredQuery:any={from:[{collectionId}],orderBy:[{field:{fieldPath:'__name__'},direction:'DESCENDING'}],limit:pageLimit};
+  // The emulator rejects descending key-only scans; sequence is already indexed on every stored row.
+  const structuredQuery:any={from:[{collectionId}],orderBy:options.field?[{field:{fieldPath:'__name__'},direction:'DESCENDING'}]:[{field:{fieldPath:'sequence'},direction:'DESCENDING'},{field:{fieldPath:'__name__'},direction:'DESCENDING'}],limit:pageLimit};
   // Use a single equality/inequality field. For inequality filters Firestore requires that field first.
   if(options.field){structuredQuery.where={fieldFilter:{field:{fieldPath:options.field},op:options.op||'EQUAL',value:encode(options.value)}};if(options.op&&options.op!=='EQUAL'&&options.op!=='IN')structuredQuery.orderBy=[{field:{fieldPath:options.field},direction:'DESCENDING'},{field:{fieldPath:'__name__'},direction:'DESCENDING'}];}
   if(afterValues)structuredQuery.startAt={values:afterValues,before:false};
@@ -45,7 +46,7 @@ async function query(store:Store,collection:string,options:{field?:string;op?:st
   for(const document of docs){const value=store.value(document);if(!value?.record||typeof value.record!=='object')throw Error('Invalid partition record.');rows.push({document,path:pathOf(document),record:value.record,sequence:Number(value.sequence)||0});}
   if(rows.length>maximum)throw Error('조회 한도입니다. 관리자에게 문의하세요.');
   if(!options.complete||docs.length<pageLimit)return rows;
-  after=docs.at(-1)?.name;const last=rows.at(-1)!;afterValues=structuredQuery.orderBy.length===1?[{referenceValue:after}]:[encode(last.record[options.field!.slice(7)]),{referenceValue:after}];
+  after=docs.at(-1)?.name;const last=rows.at(-1)!;afterValues=structuredQuery.orderBy.length===1?[{referenceValue:after}]:[encode(options.field?last.record[options.field.slice(7)]:last.sequence),{referenceValue:after}];
  }while(rows.length<maximum);
  if(options.complete)throw Error('조회 한도입니다. 관리자에게 문의하세요.');return rows;
 }
@@ -147,10 +148,27 @@ export class StateRepository {
  }
  async listHistory(uid:string,table:HistoryTable,cursor?:string|null,limit=25):Promise<HistoryPage>{
   if(!HISTORY_TABLES.includes(table)||!Number.isInteger(limit)||limit<1||limit>50)throw Error('기록 조회 입력을 확인하세요.');const document=await this.store.get(this.statePath);if(!document)throw Error('학급이 설정되지 않았습니다.');const state=this.store.value(document) as StoredState,me=member(state,uid),teacher=me.role==='teacher';if(!teacher&&!PERSONAL.has(table))throw Error('기록 조회 권한이 없습니다.');const generation=state._storage?.generation;const publicNotice=table==='notices';
-  const revision=legacyCount(state)?document.updateTime:'generation:'+(generation||'legacy');let page:{v:number;revision:string;table:string;uid:string;after?:string;offset:number}={v:1,revision,table,uid,offset:0};if(cursor){try{page=JSON.parse(atob(cursor));}catch{throw Error('기록 커서가 올바르지 않습니다.');}if(page.v!==1||page.revision!==revision||page.table!==table||page.uid!==uid||!Number.isSafeInteger(page.offset)||page.offset<0||page.after&&(!page.after.startsWith(`${this.store.base.slice(this.store.base.indexOf('projects/'))}/${teacher||publicNotice?primary(this.classId,table,generation):ownerView(this.classId,uid,table,generation)}/`)))throw Error('기록이 변경되었습니다. 처음부터 다시 조회하세요.');}
-  const collection=teacher||publicNotice?primary(this.classId,table,generation):ownerView(this.classId,uid,table,generation);const archived=await query(this.store,collection,{after:page.after,limit:limit+1,...(!teacher&&publicNotice?{field:'record.active',value:true}:{})});const inline=state[table].map((record,index)=>({record,index})).filter(x=>teacher||(publicNotice?x.record.active:x.record.uid===uid)).sort((a,b)=>stamp(b.record)-stamp(a.record)||b.index-a.index).slice(page.offset);
-  const merged=[...archived.map(row=>({record:row.record,sort:row.path.split('/').at(-1)!,stored:row})),...inline.slice(0,limit+1).map(row=>({record:row.record,sort:recordId(row.record,(state._storage?.nextSequence||0)+row.index+1),stored:null}))].sort((a,b)=>b.sort.localeCompare(a.sort));const selected=merged.slice(0,limit);let after=page.after,offset=page.offset;
-  const records=selected.map(row=>{if(row.stored)after=row.stored.document.name;else offset++;const id=row.stored?.path.split('/').at(-1);return {...row.record,...(row.stored?{archived:true,historyId:id,originalId:row.record.id,...(table==='inbox'?{id:'archive_'+id}:{})}:{archived:false})};});
-  const more=merged.length>limit||inline.length>selected.filter(x=>!x.stored).length;const nextCursor=more?btoa(JSON.stringify({...page,after,offset})):null;return {records,cursor:nextCursor,nextCursor,legacyRemaining:state[table].filter(record=>teacher||(publicNotice?record.active:record.uid===uid)).length};
+  const keyOrder=!teacher&&publicNotice;
+  const revision=legacyCount(state)?document.updateTime:'generation:'+(generation||'legacy');
+  let page:{v:number;revision:string;table:string;uid:string;after?:string;afterSequence?:number;offset:number}={v:1,revision,table,uid,offset:0};
+  if(cursor){
+   let parsed:unknown;try{parsed=JSON.parse(atob(cursor));}catch{throw Error('기록 커서가 올바르지 않습니다.');}
+   if(!parsed||typeof parsed!=='object'||Array.isArray(parsed))throw Error('기록 커서가 올바르지 않습니다.');
+   page=parsed as typeof page;
+   if(page.v!==1||page.revision!==revision||page.table!==table||page.uid!==uid||!Number.isSafeInteger(page.offset)||page.offset<0)throw Error('기록이 변경되었습니다. 처음부터 다시 조회하세요.');
+   if(page.after!==undefined){
+    const prefix=`${this.store.base.slice(this.store.base.indexOf('projects/'))}/${teacher||publicNotice?primary(this.classId,table,generation):ownerView(this.classId,uid,table,generation)}/`;
+    if(typeof page.after!=='string'||!page.after.startsWith(prefix)||!/^\d{16}_\d{16}$/.test(page.after.slice(prefix.length)))throw Error('기록 커서가 올바르지 않습니다.');
+    if(!keyOrder){
+     // Earlier v1 cursors carried only the document reference; its existing sequence is sufficient.
+     if(page.afterSequence===undefined){const prior=await this.store.get(page.after.slice(page.after.indexOf('/documents/')+11));if(!prior)throw Error('기록이 변경되었습니다. 처음부터 다시 조회하세요.');page.afterSequence=this.store.value(prior)?.sequence;}
+     if(!Number.isSafeInteger(page.afterSequence)||(page.afterSequence??0)<1)throw Error('기록 커서가 올바르지 않습니다.');
+    }
+   }else if(page.afterSequence!==undefined)throw Error('기록 커서가 올바르지 않습니다.');
+  }
+  const collection=teacher||publicNotice?primary(this.classId,table,generation):ownerView(this.classId,uid,table,generation);const archived=await query(this.store,collection,{after:page.after,afterSequence:page.afterSequence,limit:limit+1,...(!teacher&&publicNotice?{field:'record.active',value:true}:{})});const inline=state[table].map((record,index)=>({record,index})).filter(x=>teacher||(publicNotice?x.record.active:x.record.uid===uid)).sort((a,b)=>stamp(b.record)-stamp(a.record)||b.index-a.index).slice(page.offset);
+  const inlineTotal=state[table].filter(record=>teacher||(publicNotice?record.active:record.uid===uid)).length;const merged=[...archived.map(row=>({record:row.record,sort:keyOrder?row.path.split('/').at(-1)!:String(row.sequence).padStart(16,'0'),stored:row})),...inline.slice(0,limit+1).map((row,index)=>({record:row.record,sort:keyOrder?recordId(row.record,(state._storage?.nextSequence||0)+row.index+1):String((state._storage?.nextSequence||0)+inlineTotal-page.offset-index).padStart(16,'0'),stored:null}))].sort((a,b)=>b.sort.localeCompare(a.sort));const selected=merged.slice(0,limit);let after=page.after,afterSequence=page.afterSequence,offset=page.offset;
+  const records=selected.map(row=>{if(row.stored){after=row.stored.document.name;afterSequence=row.stored.sequence;}else offset++;const id=row.stored?.path.split('/').at(-1);return {...row.record,...(row.stored?{archived:true,historyId:id,originalId:row.record.id,...(table==='inbox'?{id:'archive_'+id}:{})}:{archived:false})};});
+  const more=merged.length>limit||inline.length>selected.filter(x=>!x.stored).length;const nextCursor=more?btoa(JSON.stringify({...page,after,afterSequence,offset})):null;return {records,cursor:nextCursor,nextCursor,legacyRemaining:state[table].filter(record=>teacher||(publicNotice?record.active:record.uid===uid)).length};
  }
 }

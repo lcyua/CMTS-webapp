@@ -1,6 +1,6 @@
 # 분리 저장소와 운영 경계
 
-2026-11-13 코드 기준입니다. Worker `3c140c5b-1b47-4859-a625-e9a75af1708f`는 배포됐고 health v2·서버 설정 응답을 확인했습니다. 운영 계정으로 인증한 분리 조회와 실제 데이터 마이그레이션 완료는 아직 확인하지 않았습니다. 아래 동작은 구현·로컬 검사 결과이며 운영 완료 선언이 아닙니다. 구현은 [state-repository.ts](../worker/state-repository.ts), 백업·복구 절차는 [OPERATIONS.md](../OPERATIONS.md)를 따릅니다.
+2026-11-15 코드 기준입니다. Worker `3c140c5b-1b47-4859-a625-e9a75af1708f`는 배포됐고 health v2·서버 설정 응답을 확인했습니다. 운영 계정으로 인증한 분리 조회와 실제 데이터 마이그레이션 완료는 아직 확인하지 않았습니다. 아래 동작은 구현·로컬 검사 결과이며 운영 완료 선언이 아닙니다. 구현은 [state-repository.ts](../worker/state-repository.ts), 백업·복구 절차는 [OPERATIONS.md](../OPERATIONS.md)를 따릅니다.
 
 ## 문서 구조
 
@@ -17,7 +17,7 @@
 | `classes/{classId}/commandReceipts/{hash}` | 세대와 별개로 유지하는 중복 요청 영수증 |
 | `classes/{classId}/migrationBackups/{hash}` | 첫 이전 직전 기본 문서의 불변 사본 |
 
-행 문서는 `{record, sequence}`를 저장합니다. 원래 `record.id`를 보존하고, 별도 문서 ID는 16자리 시각과 16자리 시퀀스를 결합합니다. 과거 행의 ID가 겹쳐도 서로 덮어쓰지 않습니다. 퀴즈에는 활성 문제의 날짜인 `publishedDate`, 공지에는 `importantActive` 조회 필드를 추가합니다. lot 잔액·신청 상태·알림 읽음은 원본 행과 학생별 사본을 함께 갱신합니다.
+행 문서는 `{record, sequence}`를 저장합니다. 원래 `record.id`를 보존하고, 별도 문서 ID는 16자리 시각과 16자리 시퀀스를 결합합니다. 과거 행의 ID가 겹쳐도 서로 덮어쓰지 않습니다. 필터 없는 조회는 기존 `sequence` 인덱스를 사용하며 문서 ID만 역순으로 스캔하지 않습니다. 퀴즈에는 활성 문제의 날짜인 `publishedDate`, 공지에는 `importantActive` 조회 필드를 추가합니다. lot 잔액·신청 상태·알림 읽음은 원본 행과 학생별 사본을 함께 갱신합니다.
 
 `_storage.version=1`은 저장 형식입니다. API의 `clientVersion=2`와 구분합니다. 메타데이터에는 다음 항목이 있습니다.
 
@@ -41,7 +41,7 @@
 
 ## 조회·인덱스·무료 쿼터
 
-조회는 컬렉션 경로로 소유자를 제한하고 단일 필드 조건을 사용합니다. 현재 필드는 `record.id`, `record.status`, `record.date`, `record.month`, `record.expiresAt`, `record.reserved`, `record.active`, `publishedDate`, `importantActive` 및 `__name__`입니다. 범위 조건은 해당 필드와 `__name__`를 내림차순으로 정렬합니다. 기본 자동 단일 필드 인덱스를 사용하도록 작성했으며 별도 복합 인덱스 배포는 요구하지 않습니다. 운영 프로젝트의 인덱스 면제 설정이나 실제 인증 쿼리 성공까지 확인한 결과는 아닙니다.
+조회는 컬렉션 경로로 소유자를 제한하고 단일 필드 조건을 사용합니다. 현재 필드는 `record.id`, `record.status`, `record.date`, `record.month`, `record.expiresAt`, `record.reserved`, `record.active`, `publishedDate`, `importantActive`, `sequence` 및 `__name__`입니다. 범위 조건은 해당 필드와 `__name__`를 내림차순으로 정렬합니다. 필터 없는 조회는 `sequence DESC, __name__ DESC`를 사용합니다. 기본 자동 단일 필드 인덱스를 사용하도록 작성했으며 별도 복합 인덱스 배포는 요구하지 않습니다. 운영 프로젝트의 인덱스 면제 설정이나 실제 인증 쿼리 성공까지 확인한 결과는 아닙니다.
 
 Firestore Rules는 계속 모든 클라이언트 직접 읽기·쓰기를 거부합니다. 이 저장소 변경을 위해 Rules를 완화하거나 배포할 필요가 없습니다. 서버가 인증·활성 회원·역할·소유권을 검사합니다.
 
@@ -62,7 +62,17 @@ Firestore Rules는 계속 모든 클라이언트 직접 읽기·쓰기를 거부
 
 사본은 쓰기·저장량을 늘리고 영수증과 이력은 계속 쌓입니다. 경합·자료량·구형 UI 조회에 따라 비용이 달라집니다. 장기간 무료 CPU·요청·Firestore 쿼터를 보장하는 수치는 아니며 운영 실측이 필요합니다. 기본 문서에 남는 운영 설정도 700KB 제한을 받습니다.
 
-커서는 소유자·표·세대·마지막 문서에 묶입니다. 미이전 행이 있는 동안에는 기본 문서 버전도 묶어, 변경 시 처음부터 다시 조회하도록 합니다. 이전 완료 후에는 다른 학급 활동으로 커서를 무효화하지 않지만 복구로 세대가 바뀌면 무효화합니다. 정렬은 문서 ID를 사용해 수정된 신청 시각 때문에 페이지가 중복되거나 누락되지 않게 합니다.
+커서는 소유자·표·세대·마지막 문서에 묶입니다. 미이전 행이 있는 동안에는 기본 문서 버전도 묶어, 변경 시 처음부터 다시 조회하도록 합니다. 이전 완료 후에는 다른 학급 활동으로 커서를 무효화하지 않지만 복구로 세대가 바뀌면 무효화합니다. 필터 없는 이력은 시각순 대신 안정적인 저장 시퀀스 역순으로 정렬합니다. 미이전 꼬리는 고정된 기본 문서 버전에 묶어 함께 순회합니다. 활성 공지만 보는 학생 조회는 기존 필드 조건과 문서 ID 순서를 유지합니다. 행의 표시 시각이 수정돼도 커서의 정렬 기준은 바뀌지 않습니다. 기존 v1 커서에 시퀀스가 없으면 범위가 검증된 마지막 문서를 읽어 시퀀스를 복원합니다. 세대·소유자·표가 다른 커서와 잘못된 객체·참조는 거부합니다.
+
+## 실제 로컬 REST 검사
+
+`firebase.worker-test.json`과 `scripts/test-worker-firestore.ts`로 Standard Firestore Emulator를 `127.0.0.1:8185`, `demo-worker-firestore`에서 실행합니다. 실행기는 외부 주소와 다른 프로젝트를 거부하며 합성 학급 문서만 만들고 정리합니다.
+
+```sh
+npx -y firebase-tools@latest emulators:exec --project demo-worker-firestore --config firebase.worker-test.json --only firestore 'node_modules/.bin/tsx scripts/test-worker-firestore.ts'
+```
+
+Emulator 1.22.0에서 필터 없는 `__name__ DESC` 조회가 HTTP 400 `FAILED_PRECONDITION: Firestore does not support descending key scans`를 반환하는 것을 재현했습니다. 기존 행에 있는 `sequence`의 자동 인덱스를 사용하는 변경 후 실제 REST 이력·v1 커서·501행 범위 페이지·batchGet·6개 동시 commit·이전 백업·교사 및 학생 조회를 검사합니다. 새 필드나 기존 행 backfill을 요구하지 않습니다. 이 로컬 재현을 운영 Firestore에서 같은 오류를 관측한 결과로 보고하지 않습니다.
 
 ## 배포·복구·보존
 
