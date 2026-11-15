@@ -141,7 +141,7 @@ test('dispatch job count and failed retry count remain bounded',async()=>usingMe
 test('unconfigured push has no service worker or network dependency during logout',async()=>{
  let calls=0;const client=createPushClient(null,async()=>{calls++;},'',false);
  await client.cleanup();await client.pause();await client.sync();
- assert.equal(calls,0);assert.deepEqual(await client.status(),{configured:false,supported:false,permission:'unsupported',registered:false,optedIn:false});
+ assert.equal(calls,0);assert.deepEqual(await client.status(),{configured:false,supported:false,permission:'unsupported',registered:false,optedIn:false,phase:'idle',error:''});
 });
 
 test('push service worker only displays generic opted-in notifications and same-origin links',async()=>{

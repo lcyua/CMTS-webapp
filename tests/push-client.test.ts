@@ -1,20 +1,24 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {createPushController,PushRuntime} from '../src/push-controller';
+import {createPushController,PushRuntime,PushTiming} from '../src/push-controller';
 import {pushPermissionStep,receivesPush,validPushKey} from '../src/push-preferences';
+import {requestNotificationPermission} from '../src/push-permission';
 
 const key='B'+'a'.repeat(86),otherKey='B'+'b'.repeat(86),deviceId='00000000-0000-4000-8000-000000000001';
 const tick=()=>new Promise(resolve=>setImmediate(resolve));
 function deferred<T>(){let resolve!:(value:T)=>void;const promise=new Promise<T>(done=>{resolve=done;});return {promise,resolve};}
-function fixture(permission:NotificationPermission='granted',enabled=true){
+function fixture(permission:NotificationPermission='granted',enabled=true,timing:PushTiming={}){
  let uid='student1',currentPermission=permission,supported=true,now=1000000;
  const preferences=new Map<string,string>(),transports=new Map<string,boolean>(),calls:{owner:string;input:any}[]=[],events:string[]=[],workers:boolean[]=[];
  let requests=0,tokens=0,deletions=0;
+ const permissionListeners=new Set<()=>void>();
  let tokenWork=async()=>`fake-token-${uid}`,deleteWork=async()=>{},callWork=async(_input:any)=>{};
+ let requestWork=async():Promise<NotificationPermission>=>{currentPermission='granted';return currentPermission;},supportWork=async()=>supported;
  const runtime:PushRuntime={
   now:()=>now,
-  uid:()=>uid,supported:async()=>supported,permission:()=>currentPermission,
-  requestPermission:async()=>{requests++;events.push('prompt');currentPermission='granted';return currentPermission;},
+  uid:()=>uid,supported:()=>supportWork(),permission:()=>currentPermission,
+  requestPermission:()=>{requests++;events.push('prompt');return requestWork();},
+  observePermission:changed=>{permissionListeners.add(changed);return()=>{permissionListeners.delete(changed);};},
   preference:owner=>preferences.get(owner)??null,setPreference:(owner,value)=>{preferences.set(owner,String(value));},
   hasTransport:owner=>transports.get(owner)===true,setTransport:(owner,value)=>{transports.set(owner,value);},
   deviceId:()=>deviceId,
@@ -22,8 +26,8 @@ function fixture(permission:NotificationPermission='granted',enabled=true){
   deleteToken:async()=>{deletions++;events.push('delete:start');await deleteWork();events.push('delete:end');},
   workerPermission:async value=>{workers.push(value);events.push('worker:'+value);},listen:()=>()=>{}
  };
- const client=createPushController(true,async input=>{calls.push({owner:uid,input});await callWork(input);},runtime,{enabled,vapidKey:key},2);
- return {client,runtime,preferences,transports,calls,events,workers,get requests(){return requests;},get tokens(){return tokens;},get deletions(){return deletions;},setNow:(value:number)=>{now=value;},setUid:(value:string)=>{uid=value;},setPermission:(value:NotificationPermission)=>{currentPermission=value;},setSupported:(value:boolean)=>{supported=value;},setToken:(value:typeof tokenWork)=>{tokenWork=value;},setDelete:(value:typeof deleteWork)=>{deleteWork=value;},setCall:(value:typeof callWork)=>{callWork=value;}};
+ const client=createPushController(true,async input=>{calls.push({owner:uid,input});await callWork(input);},runtime,{enabled,vapidKey:key},2,timing);
+ return {client,runtime,preferences,transports,calls,events,workers,get requests(){return requests;},get tokens(){return tokens;},get deletions(){return deletions;},get observers(){return permissionListeners.size;},notifyPermission:()=>permissionListeners.forEach(changed=>changed()),setRequest:(value:typeof requestWork)=>{requestWork=value;},setSupport:(value:typeof supportWork)=>{supportWork=value;},setNow:(value:number)=>{now=value;},setUid:(value:string)=>{uid=value;},setPermission:(value:NotificationPermission)=>{currentPermission=value;},setSupported:(value:boolean)=>{supported=value;},setToken:(value:typeof tokenWork)=>{tokenWork=value;},setDelete:(value:typeof deleteWork)=>{deleteWork=value;},setCall:(value:typeof callWork)=>{callWork=value;}};
 }
 
 test('unset device choice receives by default; explicit device/account opt-outs win',()=>{
@@ -134,4 +138,55 @@ test('public server config enables granted defaults and invalid/off config cance
 test('test notification is an explicit registered-device action with no recipient or token',async()=>{
  const f=fixture();await assert.rejects(f.client.test(),/연결한 뒤/);await f.client.sync();assert.equal(f.calls.some(c=>c.input.action==='test'),false);
  await f.client.test();assert.deepEqual(f.calls.at(-1)?.input,{action:'test',deviceId});
+});
+
+test('mobile permission callback can finish while the native promise stays pending',async()=>{
+ const never=new Promise<NotificationPermission>(()=>{});
+ assert.equal(await requestNotificationPermission(callback=>{callback('granted');return never;}),'granted');
+ assert.equal(await requestNotificationPermission(callback=>{callback('denied');}),'denied');
+ assert.equal(await requestNotificationPermission(()=>Promise.resolve('granted')),'granted');
+ await assert.rejects(requestNotificationPermission(()=>{throw Error('Synthetic native failure');}),/Synthetic native failure/);
+});
+
+test('two permission buttons share one bounded native request and show an actionable failure',async()=>{
+ const f=fixture('default',true,{permissionMs:20});f.setRequest(()=>new Promise(()=>{}));
+ const first=f.client.enable(),second=f.client.enable();assert.equal(first,second);assert.equal(f.requests,1);
+ assert.equal((await f.client.status()).phase,'permission');
+ await assert.rejects(first,/권한 응답이 없습니다/);
+ const state=await f.client.status();assert.equal(state.phase,'idle');assert.match(state.error,/권한 응답이 없습니다/);assert.equal(state.registered,false);assert.equal(f.tokens,0);
+});
+
+test('observed permission grant updates the UI and settles a stuck native request before token work',async()=>{
+ const f=fixture('default',true,{permissionMs:100,connectionMs:100}),token=deferred<string>();f.setRequest(()=>new Promise(()=>{}));f.setToken(()=>token.promise);
+ const stop=f.client.onChange(()=>{});assert.equal(f.observers,1);
+ const enable=f.client.enable();f.setPermission('granted');f.notifyPermission();await tick();
+ const state=await f.client.status();assert.equal(state.permission,'granted');assert.equal(state.phase,'connecting');assert.equal(state.registered,false);assert.equal(f.requests,1);assert.equal(f.tokens,1);
+ token.resolve('fake-observed-token');await enable;assert.equal((await f.client.status()).registered,true);
+ stop();assert.equal(f.observers,0);
+});
+
+test('stalled token work times out visibly and a late token cannot register before a clean retry',async()=>{
+ const f=fixture('granted',true,{connectionMs:20}),token=deferred<string>();f.setToken(()=>token.promise);
+ await f.client.sync();const state=await f.client.status();assert.equal(state.phase,'idle');assert.equal(state.registered,false);assert.match(state.error,/연결 응답이 지연/);assert.equal(f.calls.length,0);
+ token.resolve('fake-late-token');await tick();await tick();assert.equal(f.calls.length,0);assert.equal((await f.client.status()).registered,false);
+ f.setToken(async()=>'fake-retry-token');await f.client.enable();assert.equal((await f.client.status()).registered,true);assert.equal((await f.client.status()).error,'');assert.equal(f.calls.at(-1)?.input.token,'fake-retry-token');
+});
+
+test('a late server registration response cannot re-enable delivery after its deadline',async()=>{
+ const f=fixture('granted',true,{connectionMs:20}),response=deferred<void>();f.setCall(input=>input.action==='register'?response.promise:Promise.resolve());
+ await f.client.sync();assert.equal((await f.client.status()).registered,false);assert.match((await f.client.status()).error,/연결 응답이 지연/);assert.equal(f.workers.at(-1),false);
+ response.resolve();await tick();await tick();assert.equal(f.workers.includes(true),false);assert.equal((await f.client.status()).registered,false);
+});
+
+test('a stalled browser capability check cannot leave the settings screen loading forever',async()=>{
+ const f=fixture('granted',true,{supportMs:20,connectionMs:100});f.setSupport(()=>new Promise(()=>{}));
+ const state=await f.client.status();assert.equal(state.supported,false);assert.match(state.error,/지원 확인이 지연/);
+ await f.client.sync();assert.equal(f.tokens,0);assert.equal((await f.client.status()).phase,'idle');
+});
+
+test('external permission changes reconnect and revoke without prompting or overwriting opt-out',async()=>{
+ const f=fixture('default');const stop=f.client.onChange(()=>{});
+ f.setPermission('granted');f.notifyPermission();await tick();await tick();assert.equal((await f.client.status()).registered,true);assert.equal(f.requests,0);
+ f.setPermission('denied');f.notifyPermission();await tick();assert.equal((await f.client.status()).registered,false);assert.equal(f.workers.at(-1),false);
+ f.preferences.set('student1','false');f.setPermission('granted');f.notifyPermission();await tick();assert.equal(f.tokens,1);assert.equal(f.preferences.get('student1'),'false');stop();
 });
