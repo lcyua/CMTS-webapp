@@ -1,11 +1,26 @@
 # 기기 푸시 알림
 
-Firebase Cloud Messaging HTTP v1과 기존 무료 Cloudflare Worker를 사용합니다. 앱·기기의 수신 의사는 기본 켜짐이며, 명시적으로 끈 선택은 보존합니다. 브라우저·운영체제의 알림 권한은 사용자가 직접 허용해야 합니다. 서버 발송은 API·IAM 준비가 확인될 때까지 안전하게 꺼둔 상태입니다. 앱 내 알림은 독립적으로 동작합니다.
+Firebase Cloud Messaging HTTP v1과 기존 무료 Cloudflare Worker를 사용합니다. 준비한 코드에서 앱·기기의 수신 의사는 기본 켜짐이며, 명시적으로 끈 선택은 보존합니다. 브라우저·운영체제의 알림 권한은 사용자가 직접 허용해야 합니다. 서버 발송은 API·IAM 준비가 확인될 때까지 안전하게 꺼둔 상태입니다. 앱 내 알림은 독립적으로 동작합니다.
+
+## 현재 진행 상태 — 2026-11-15
+
+**준비 완료, 실제 활성화·Hosting 업데이트·기기 수신 검증 대기**입니다.
+
+- 준비 소스: `c8b2e3f`. 공개 VAPID 검증, 기본 수신 의사, 권한 허용 안내, 이미 허용된 기기 자동 연결과 교사 본인 기기 테스트를 포함합니다.
+- 준비 Worker: `fec4aac2-c0d4-4296-888d-bf988e4f27cd`, deployment `04c6dfd4-7046-4d9b-bc5c-44d512ddd577`가 2026-11-15T11:00:33Z에 100% 배포됐습니다. health는 `configured=true`, `history=true`, `push=false`입니다. 이 버전의 시작 시간은 측정하지 않았습니다. 기존 교사 로그인 수정 버전 `84269e08-87cf-4a1e-8066-d6bbdeb9ff96`의 검증 이력은 유지합니다.
+- 로컬 준비 검증: `npm test` 119/119, Python 설정 도구 22/22, 새 푸시 UI 10/10, Worker strict·실제 Firebase 설정 프런트 빌드·Wrangler dry-run 통과. 실제 FCM 권한이나 기기 수신을 검증한 결과는 아닙니다.
+- FCM API 활성화·발송용 IAM 추가는 아직 실행하지 않았고 `PUSH_ENABLED=false`를 유지합니다. 발송 코드와 수신 의사 기본값이 준비된 상태를 실제 발송 가능·실수신 확인 완료로 표현하지 않습니다.
+- 새 패키지: `wooriban-push-ready-2026-11-15.zip`, 297159바이트, 16개 파일, SHA-256 `97ad73956a69b555ab1db8209a23ad74468d9f5ea92cc6f24b4d92b34f79272b`. `configure-push.py`, 새 화면 번들 `index-1yDFAHFr.js`, Hosting 전용 설정과 배포 실행 파일이 포함됩니다. 명단·PIN·서버 비밀값은 없습니다.
+- 패키지·준비 폴더·빌드 결과의 일치를 확인했습니다. 새 서비스 워커 SHA-256은 `e5e7f03165e02f5f26f8f25da3db3022c4b392842f4f8c331f4b324ab5e201f8`, `push-worker.js`는 `b9316898462c6bd57ed6f7a9dc49c1d1b3e666a831ec828a692f36d014ae59d2`입니다. 현재 실제 Hosting은 기존 `index-BKi-e-_2.js`이며 새 푸시 화면은 미배포입니다.
+- 배포된 `/pushDevice`의 인증 없는 `test` 요청은 401·`no-store`로 거부되고 발송되지 않았습니다. 본인 기기의 실제 수신 검사는 아직 수행하지 않았습니다.
+- 설정 파일과 새 패키지의 저장을 사용자가 명시적으로 허용한 뒤 비공개 Drive 파일로 전달했습니다. 297159바이트·공유 꺼짐·소유자 1명만 존재함을 확인했고 파일 전달 승인 대기는 해소됐습니다. 실제 API·IAM 적용·새 Hosting 배포·실수신은 아직 대기입니다. 기존 기본 기능 Hosting의 배포·로그인·교사 설정 검증은 완료된 사실로 유지합니다.
+
+새 파일의 비공개 전달은 완료했습니다. 남은 순서는 운영자 환경에서 FCM API·기존 계정 발송 역할 적용 → 새 Hosting 업데이트 → 서버 발송 활성화 → 각 기기 권한 허용·교사 본인 기기 테스트·실제 수신 확인입니다. 기존 18명 계정·PIN 재발급, 기존 학생 비밀번호 조회, 결제 연결·유료 업그레이드로 우회하지 않습니다.
 
 ## 활성화 전 설정
 
 - 공개 VAPID 키는 사용자 제공 후 P-256 공개 키로 검증했으며 `wrangler.jsonc`의 `WEB_PUSH_VAPID_PUBLIC_KEY`에 보관합니다. 인증된 `readState.pushConfig`가 `enabled`, 공개 키, 기본 수신 상태만 제공하고 클라이언트 `configure()`가 적용합니다. 이후 키 변경은 Hosting 재빌드 없이 서버 설정으로 반영할 수 있습니다. 서버 키·PIN·pepper를 공개 설정에 넣지 않습니다.
-- Worker 설정: `PUSH_ENABLED=true`. 기존 전용 런타임 서비스 계정에 FCM 발송용 `roles/firebasecloudmessaging.admin` 권한과 FCM API 사용이 필요합니다. 이 구현은 권한·API·결제 설정을 자동 변경하지 않습니다. 별도 FCM 서버 비밀키를 클라이언트에 넣지 않습니다.
+- Worker 설정: `PUSH_ENABLED=true`. 기존 전용 런타임 서비스 계정에 FCM 발송용 `roles/firebasecloudmessaging.admin` 권한과 FCM API 사용이 필요합니다. 앱 자체는 권한·API·결제 설정을 자동 변경하지 않으며 운영자 도구의 명시적 적용이 필요합니다. 별도 FCM 서버 비밀키를 클라이언트에 넣지 않습니다.
 - Worker scheduled 이벤트에서 `dispatchPush`를 호출합니다. 기본값은 실행당 1개 작업, 계정당 최대 5기기입니다. 측정 후에도 `maxJobs`는 최대 5로 제한합니다. 1분 주기의 기본 처리량은 하루 최대 1,440개 알림 작업입니다. 작업은 순서대로 처리하므로 기기 상태와 대기량에 따라 지연될 수 있습니다. CPU와 Firestore 무료 쿼터를 확인하고 활성화합니다.
 - `public/sw.js`가 `/push-worker.js`를 가져와야 합니다. 같은 서비스 워커를 PWA와 Messaging 토큰에 사용합니다. 별도 Firebase 서비스 워커를 루트 범위에 등록하지 않습니다.
 
