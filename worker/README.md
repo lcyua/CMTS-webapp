@@ -31,11 +31,11 @@ Wrangler secret으로만 설정합니다. `.env.local`의 `VITE_*`, Git, 정적 
 
 서명 키 import와 동시 OAuth 토큰 갱신을 재사용하고 로그인 제한 문서는 `batchGet`으로 함께 읽습니다. `signInWithPassword`가 비활성 계정을 거부하며 custom token 교환과 이후 `portal`에서도 계정 상태를 확인하므로 로그인 중 중복 Auth lookup은 하지 않습니다. 실제 임시 계정으로 `USER_DISABLED` 거부를 검증했습니다.
 
-새 서버는 누적 이력을 분리하고 소유자별 커서 조회·요청 영수증·포인트 요약·첫 이전 원본 백업·복구 세대를 지원합니다. 기본 설정 문서의 700KB와 명령별 조회/쓰기 제한은 유지합니다. 상세 구조는 `../docs/STORAGE.md`, 전체 백업·복구·보관 도구는 `../OPERATIONS.md`, 기본 꺼짐인 FCM은 `../docs/PUSH.md`를 참조하세요. 실제 인증된 분리 조회·이전·운영 복구 훈련과 실기기 수신은 아직 검증 전입니다.
+새 서버는 누적 이력을 분리하고 소유자별 커서 조회·요청 영수증·포인트 요약·첫 이전 원본 백업·복구 세대를 지원합니다. 기본 설정 문서의 700KB와 명령별 조회/쓰기 제한은 유지합니다. 상세 구조는 `../docs/STORAGE.md`, 전체 백업·복구·보관 도구는 `../OPERATIONS.md`, 기본 꺼짐인 FCM은 `../docs/PUSH.md`를 참조하세요. 로컬 실제 Firestore Emulator의 조회·커서·동시 요청·이전·501건 범위 검사를 통과했습니다. 운영 인증 조회·이전·운영 복구 훈련과 실기기 수신은 아직 검증 전입니다.
 
 ## 배포 및 무료 CPU 실측
 
-현재 Worker 버전은 `3c140c5b-1b47-4859-a625-e9a75af1708f`입니다. Wrangler 4.161.0 시작 시간은 3ms, health는 API v2·configured=true·history=true·push=false입니다. Firebase Hosting은 기존 live 버전 `293841b2aa5c57a6`이며 새 화면 빌드는 사용자 컴퓨터의 공식 CLI 배포를 기다립니다. 프런트의 `VITE_API_BASE`는 위 실제 API 주소를 사용합니다.
+현재 Worker 버전은 `84269e08-87cf-4a1e-8066-d6bbdeb9ff96`입니다. Wrangler 4.162.0 시작 시간은 2ms, health는 API v2·configured=true·history=true·push=false입니다. Firebase Hosting 새 화면은 2026-11-15 사용자 컴퓨터의 공식 CLI로 배포됐으며 준비한 번들·서비스 워커와 일치하는 것을 확인했습니다. `293841b2aa5c57a6`은 과거 버전입니다. 프런트의 `VITE_API_BASE`는 위 실제 API 주소를 사용합니다.
 
 과거 배포의 로그인은 일부 10ms를 초과해 키/토큰 재사용, 로그인 제한 문서 batchGet, 중복 Auth 조회 제거를 적용했습니다. 이전 Worker `04f64559-5bfd-4c06-91cd-fd0c030377e7`의 실제 학생 18명 로그인 CPU는 5~8ms, portal 수집 샘플은 1~5ms, 로그인 옵션은 6ms였고 수집 요청의 outcome은 모두 `ok`였습니다. Free의 10ms 기준 안에서 통과한 소규모 실측이며 장기·대규모 동시 부하를 보장하지 않습니다. 요청·Firestore 무료 쿼터 및 CPU 초과는 계속 관찰해야 합니다. 결제나 유료 업그레이드를 자동으로 추가하지 않습니다.
 
