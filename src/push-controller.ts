@@ -9,7 +9,7 @@ export interface PushRuntime {
  uid:()=>string;supported:()=>Promise<boolean>;permission:()=>NotificationPermission|'unsupported';requestPermission:()=>Promise<NotificationPermission>;
  observePermission?:(changed:()=>void)=>()=>void;
  preference:(uid:string)=>string|null;setPreference:(uid:string,enabled:boolean)=>void;hasTransport:(uid:string)=>boolean;setTransport:(uid:string,registered:boolean)=>void;
- deviceId:()=>string;token:(vapidKey:string)=>Promise<string>;deleteToken:()=>Promise<unknown>;workerPermission:(enabled:boolean)=>Promise<void>;listen:(onPush:()=>void)=>()=>void;
+ deviceId:()=>string;token:(vapidKey:string)=>Promise<string>;deleteToken:()=>Promise<unknown>;workerPermission:(enabled:boolean,current?:()=>boolean)=>Promise<void>;listen:(onPush:()=>void)=>()=>void;
 }
 export interface PushTiming {permissionMs?:number;connectionMs?:number;supportMs?:number}
 class CancelledRegistration extends Error{}
@@ -38,7 +38,7 @@ export function createPushController(available:boolean,call:PushCall,runtime:Pus
  const assertCurrent=(owner:string,version:number)=>{if(!current(owner,version))throw new CancelledRegistration('로그인 계정이나 알림 설정이 변경되었습니다.');};
  const supported=()=>deadline(runtime.supported(),supportMs,'브라우저의 기기 알림 지원 확인이 지연되고 있습니다. 브라우저를 다시 열고 시도해 주세요.');
  function tokenOperation<T>(operation:()=>Promise<T>){const work=tokenTail.then(operation,operation);tokenTail=work.catch(()=>{});return work;}
- function workerPermission(allow:boolean,version=generation){const operation=workerTail.catch(()=>{}).then(async()=>{if(version!==generation)return;await runtime.workerPermission(allow);});workerTail=operation.catch(()=>{});return operation;}
+ function workerPermission(allow:boolean,version=generation){const current=()=>!allow||version===generation;const operation=workerTail.catch(()=>{}).then(async()=>{if(!current())return;await runtime.workerPermission(allow,current);});workerTail=operation.catch(()=>{});return operation;}
  function clearRegistered(){registeredOwner='';registeredGeneration=-1;registeredAt=0;changed();}
  async function pause(){const needed=!!registeredOwner||!!registration||runtime.hasTransport(runtime.uid());generation++;phase='idle';lastError='';clearRegistered();if(needed)await workerPermission(false).catch(()=>{});}
  function configure(value:{enabled:boolean;vapidKey:string}){
@@ -121,9 +121,9 @@ export function createPushController(available:boolean,call:PushCall,runtime:Pus
  async function cleanup(all=false){
   const owner=runtime.uid(),hadTransport=!!owner&&(registeredOwner===owner||runtime.hasTransport(owner)||!!registration||configured()&&runtime.permission()==='granted');
   generation++;deferredSync=null;phase='idle';lastError='';permissionReply=null;clearRegistered();if(owner)runtime.setTransport(owner,false);
-  if(hadTransport)await workerPermission(false).catch(()=>{});
-  if(!available||!owner||(!hadTransport&&!all))return;
   const requests:Promise<unknown>[]=[];
+  if(hadTransport)requests.push(workerPermission(false));
+  if(!available||!owner||(!hadTransport&&!all)){await timeout(Promise.allSettled(requests),cleanupWaitMs);return;}
   if(runtime.uid()===owner)requests.push(call(all?{action:'unregisterAll'}:{action:'unregister',deviceId:runtime.deviceId()}));
   if(hadTransport)requests.push(tokenOperation(async()=>{if(await supported())await runtime.deleteToken();}));
   const work=Promise.allSettled(requests);pendingCleanup=work;

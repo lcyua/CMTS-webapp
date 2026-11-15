@@ -3,7 +3,7 @@ import {getAuth} from 'firebase/auth';
 import {deleteToken,getMessaging,getToken,isSupported,Messaging} from 'firebase/messaging';
 import {createPushController,PushCall,PushRuntime} from './push-controller';
 import {pushPreferenceKey} from './push-preferences';
-import {requestNotificationPermission} from './push-permission';
+import {findPushWorker,requestNotificationPermission} from './push-permission';
 export type {PushStatus} from './push-controller';
 export type PushClient=ReturnType<typeof createPushClient>;
 const DEVICE_KEY='wooriban.push-device';
@@ -16,10 +16,10 @@ export function createPushClient(app:FirebaseApp|null,call:PushCall,vapidKey:str
  const read=(key:string)=>{try{return localStorage.getItem(key)??memory.get(key)??null;}catch{return memory.get(key)??null;}};
  const write=(key:string,value:string)=>{memory.set(key,value);try{localStorage.setItem(key,value);}catch{}};
  const instance=()=>messaging??=getMessaging(app!);
- const workerPermission=async(allow:boolean)=>{
+ const workerPermission=async(allow:boolean,current=()=>true)=>{
   if(typeof navigator==='undefined'||!('serviceWorker'in navigator))return;
-  const registration=await navigator.serviceWorker.getRegistration('/');if(!registration?.active)return;
-  await new Promise<void>((resolve,reject)=>{const channel=new MessageChannel(),timer=setTimeout(()=>{channel.port1.close();reject(Error('앱을 새로고침한 뒤 다시 시도해 주세요.'));},1000);channel.port1.onmessage=e=>{clearTimeout(timer);channel.port1.close();e.data?.ok?resolve():reject(Error('기기 알림 설정을 저장하지 못했습니다.'));};registration.active!.postMessage({type:'WOORIBAN_PUSH_PERMISSION',enabled:allow},[channel.port2]);});
+  const worker=await findPushWorker(()=>navigator.serviceWorker.getRegistration('/'),current);if(!current())return;if(!worker){if(allow)throw Error('앱의 알림 연결을 찾지 못했습니다. 사이트를 새로고침한 뒤 다시 시도해 주세요.');return;}
+  await new Promise<void>((resolve,reject)=>{const channel=new MessageChannel(),timer=setTimeout(()=>{channel.port1.close();reject(Error('앱을 새로고침한 뒤 다시 시도해 주세요.'));},1000);channel.port1.onmessage=e=>{clearTimeout(timer);channel.port1.close();e.data?.ok?resolve():reject(Error('기기 알림 설정을 저장하지 못했습니다.'));};if(!current()){clearTimeout(timer);channel.port1.close();resolve();return;}worker.postMessage({type:'WOORIBAN_PUSH_PERMISSION',enabled:allow},[channel.port2]);});
  };
  const runtime:PushRuntime={
   uid:()=>app?getAuth(app).currentUser?.uid||'':'',

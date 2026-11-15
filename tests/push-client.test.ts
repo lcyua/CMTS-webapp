@@ -2,7 +2,7 @@ import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {createPushController,PushRuntime,PushTiming} from '../src/push-controller';
 import {pushPermissionStep,receivesPush,validPushKey} from '../src/push-preferences';
-import {requestNotificationPermission} from '../src/push-permission';
+import {findPushWorker,requestNotificationPermission} from '../src/push-permission';
 
 const key='B'+'a'.repeat(86),otherKey='B'+'b'.repeat(86),deviceId='00000000-0000-4000-8000-000000000001';
 const tick=()=>new Promise(resolve=>setImmediate(resolve));
@@ -12,7 +12,7 @@ function fixture(permission:NotificationPermission='granted',enabled=true,timing
  const preferences=new Map<string,string>(),transports=new Map<string,boolean>(),calls:{owner:string;input:any}[]=[],events:string[]=[],workers:boolean[]=[];
  let requests=0,tokens=0,deletions=0;
  const permissionListeners=new Set<()=>void>();
- let tokenWork=async()=>`fake-token-${uid}`,deleteWork=async()=>{},callWork=async(_input:any)=>{};
+ let tokenWork=async()=>`fake-token-${uid}`,deleteWork=async()=>{},callWork=async(_input:any)=>{},workerWork=async(_enabled:boolean)=>{};
  let requestWork=async():Promise<NotificationPermission>=>{currentPermission='granted';return currentPermission;},supportWork=async()=>supported;
  const runtime:PushRuntime={
   now:()=>now,
@@ -24,10 +24,10 @@ function fixture(permission:NotificationPermission='granted',enabled=true,timing
   deviceId:()=>deviceId,
   token:async()=>{tokens++;events.push('token:'+uid);return tokenWork();},
   deleteToken:async()=>{deletions++;events.push('delete:start');await deleteWork();events.push('delete:end');},
-  workerPermission:async value=>{workers.push(value);events.push('worker:'+value);},listen:()=>()=>{}
+  workerPermission:async value=>{workers.push(value);events.push('worker:'+value);await workerWork(value);},listen:()=>()=>{}
  };
  const client=createPushController(true,async input=>{calls.push({owner:uid,input});await callWork(input);},runtime,{enabled,vapidKey:key},2,timing);
- return {client,runtime,preferences,transports,calls,events,workers,get requests(){return requests;},get tokens(){return tokens;},get deletions(){return deletions;},get observers(){return permissionListeners.size;},notifyPermission:()=>permissionListeners.forEach(changed=>changed()),setRequest:(value:typeof requestWork)=>{requestWork=value;},setSupport:(value:typeof supportWork)=>{supportWork=value;},setNow:(value:number)=>{now=value;},setUid:(value:string)=>{uid=value;},setPermission:(value:NotificationPermission)=>{currentPermission=value;},setSupported:(value:boolean)=>{supported=value;},setToken:(value:typeof tokenWork)=>{tokenWork=value;},setDelete:(value:typeof deleteWork)=>{deleteWork=value;},setCall:(value:typeof callWork)=>{callWork=value;}};
+ return {client,runtime,preferences,transports,calls,events,workers,get requests(){return requests;},get tokens(){return tokens;},get deletions(){return deletions;},get observers(){return permissionListeners.size;},notifyPermission:()=>permissionListeners.forEach(changed=>changed()),setRequest:(value:typeof requestWork)=>{requestWork=value;},setSupport:(value:typeof supportWork)=>{supportWork=value;},setWorker:(value:typeof workerWork)=>{workerWork=value;},setNow:(value:number)=>{now=value;},setUid:(value:string)=>{uid=value;},setPermission:(value:NotificationPermission)=>{currentPermission=value;},setSupported:(value:boolean)=>{supported=value;},setToken:(value:typeof tokenWork)=>{tokenWork=value;},setDelete:(value:typeof deleteWork)=>{deleteWork=value;},setCall:(value:typeof callWork)=>{callWork=value;}};
 }
 
 test('unset device choice receives by default; explicit device/account opt-outs win',()=>{
@@ -189,4 +189,37 @@ test('external permission changes reconnect and revoke without prompting or over
  f.setPermission('granted');f.notifyPermission();await tick();await tick();assert.equal((await f.client.status()).registered,true);assert.equal(f.requests,0);
  f.setPermission('denied');f.notifyPermission();await tick();assert.equal((await f.client.status()).registered,false);assert.equal(f.workers.at(-1),false);
  f.preferences.set('student1','false');f.setPermission('granted');f.notifyPermission();await tick();assert.equal(f.tokens,1);assert.equal(f.preferences.get('student1'),'false');stop();
+});
+
+test('a stalled service worker lookup fails before a late result can produce a permission message',async()=>{
+ const lookup=deferred<ServiceWorkerRegistration|undefined>();let activeReads=0;
+ const result=findPushWorker(()=>lookup.promise,()=>true,20);
+ await assert.rejects(result,/알림 연결 확인이 지연/);
+ lookup.resolve({get active(){activeReads++;return {} as ServiceWorker;}} as ServiceWorkerRegistration);
+ await tick();assert.equal(activeReads,0);
+});
+
+test('account generation is checked again after the service worker lookup',async()=>{
+ const lookup=deferred<ServiceWorkerRegistration|undefined>();let current=true,activeReads=0;
+ const result=findPushWorker(()=>lookup.promise,()=>current,100);
+ current=false;lookup.resolve({get active(){activeReads++;return {} as ServiceWorker;}} as ServiceWorkerRegistration);
+ assert.equal(await result,null);assert.equal(activeReads,0);
+});
+
+test('logout bounds local permission cleanup while keeping the next account deferred until cleanup finishes',async()=>{
+ const f=fixture(),worker=deferred<void>();await f.client.sync();
+ f.setWorker(async enabled=>{if(!enabled)await worker.promise;});
+ const start=Date.now();await f.client.cleanup();assert.ok(Date.now()-start<250);assert.equal((await f.client.status()).registered,false);
+ assert.equal(f.calls.at(-1)?.input.action,'unregister');assert.equal(f.deletions,1);
+ f.setUid('student2');await f.client.sync();assert.equal(f.tokens,1);
+ worker.resolve();await tick();await tick();
+ assert.equal((await f.client.status()).registered,true);assert.equal(f.calls.at(-1)?.owner,'student2');assert.equal(f.tokens,2);
+});
+
+test('a second logout cannot cancel an already queued local opt-out write',async()=>{
+ const f=fixture(),lookup=deferred<void>();await f.client.sync();const writes=[true];
+ f.runtime.workerPermission=async(enabled,current)=>{if(!enabled)await lookup.promise;if(!current||current())writes.push(enabled);};
+ f.setPermission('denied');const disabling=f.client.disable();await tick();
+ await f.client.cleanup();lookup.resolve();await disabling;await tick();
+ assert.equal(writes.at(-1),false);assert.equal((await f.client.status()).registered,false);
 });
