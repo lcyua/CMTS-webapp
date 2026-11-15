@@ -70,6 +70,7 @@ test('push queue capacity preserves app inbox and payload never contains private
  const control=prepared.writes[0].value as any;assert.equal(control.pending,256);assert.equal(control.dropped,36);
  const serialized=JSON.stringify(prepared.writes);assert.ok(!serialized.includes('PRIVATE STUDENT'));assert.ok(!serialized.includes('SECRET POINTS'));
  const message=JSON.stringify(pushMessage({id:'ab'.repeat(32)},token(1)));assert.ok(!message.includes('student1'));assert.match(message,/새 학급 알림/);
+ assert.equal('kind' in pushMessage({id:'ab'.repeat(32)},token(1)).message.data,false,'Normal notifications cannot acquire the explicit self-test marker');
  const duplicate=await preparePushWrites(m.store,classId,new Set(state.inbox.map(n=>n.id)),state,null,now);assert.equal(duplicate.writes.length,0);
 }));
 
@@ -152,11 +153,14 @@ test('push service worker only displays generic opted-in notifications and same-
  const trigger=async(type:string,event:any)=>{let work:Promise<unknown>|undefined;handlers[type]({...event,waitUntil(p:Promise<unknown>){work=p;}});await work;};
  const payload={data:{id:'ab'.repeat(32),title:'SECRET NAME',body:'SECRET BALANCE',url:'https://evil.example'}};
  await trigger('push',{data:{json:()=>payload}});assert.equal(shown.length,0,'Default and logged-out state never display a message');
+ const selfTestPayload={data:{...payload.data,kind:'self-test'}};
+ await trigger('push',{data:{json:()=>selfTestPayload}});assert.equal(shown.length,0,'Self-tests also require local permission');
  await trigger('message',{data:{type:'WOORIBAN_PUSH_PERMISSION',enabled:true},ports:[{postMessage(){}}]});
  await trigger('push',{data:{json:()=>payload}});assert.equal(shown.length,1);assert.equal(shown[0].title,'우리반 학급 포털');assert.ok(!JSON.stringify(shown).includes('SECRET'));
  await trigger('notificationclick',{notification:{data:{wooriban:true},close(){}}});assert.deepEqual(opened,['https://portal.example/']);
  windows=[{url:'https://portal.example/',visibilityState:'visible',postMessage(value:any){posted.push(value);}}];
  await trigger('push',{data:{json:()=>payload}});assert.equal(shown.length,1);assert.equal(posted.length,1);
+ await trigger('push',{data:{json:()=>selfTestPayload}});assert.equal(shown.length,2,'Explicit self-tests show a system notification even while the app is visible');assert.equal(posted.length,2);assert.ok(!JSON.stringify(shown).includes('SECRET'));
  await trigger('message',{data:{type:'WOORIBAN_PUSH_PERMISSION',enabled:false},ports:[{postMessage(){}}]});
- await trigger('push',{data:{json:()=>payload}});assert.equal(shown.length,1);assert.equal(posted.length,1);
+ await trigger('push',{data:{json:()=>payload}});await trigger('push',{data:{json:()=>selfTestPayload}});assert.equal(shown.length,2);assert.equal(posted.length,2);
 });

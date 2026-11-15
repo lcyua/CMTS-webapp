@@ -9,7 +9,8 @@
     "worker:check": "tsc --noEmit --strict --skipLibCheck --target ES2022 --module ESNext --moduleResolution bundler --lib ES2022,DOM worker/index.ts",
     "ops:plan": "bash scripts/maintenance-daily.sh",
     "ops:check": "tsx --test tests/maintenance.test.ts",
-    "test:worker:emulator": "npx -y firebase-tools@latest emulators:exec --config firebase.worker-test.json --project demo-worker-firestore --only firestore \"npx tsx scripts/test-worker-firestore.ts\""
+    "test:worker:emulator": "npx -y firebase-tools@latest emulators:exec --config firebase.worker-test.json --project demo-worker-firestore --only firestore \"npx tsx scripts/test-worker-firestore.ts\"",
+    "push:setup:check": "python3 -m unittest discover -s tests -p test_configure_push.py"
   },
   "dependencies": {
     "firebase": "^11.0.0",

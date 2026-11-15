@@ -6,7 +6,9 @@ import {accessToken,ServiceAccount,signingKey,Store,UpstreamError} from './store
 import {digest,pinPassword} from './credentials';
 import {StateRepository,CommandRateLimitError,type HistoryTable} from './state-repository';
 import {updatePushDevice,preparePushWrites,pushControlPath,dispatchPush} from './push';
-interface Env {FIREBASE_PROJECT_ID:string;CLASS_ID:string;ALLOWED_ORIGINS:string;FIREBASE_WEB_API_KEY:string;FIREBASE_SERVICE_ACCOUNT:string;STUDENT_PIN_PEPPER:string;PUSH_ENABLED?:string}
+import {sendOwnPushTest,PushTestError} from './push-test';
+interface Env {FIREBASE_PROJECT_ID:string;CLASS_ID:string;ALLOWED_ORIGINS:string;FIREBASE_WEB_API_KEY:string;FIREBASE_SERVICE_ACCOUNT:string;STUDENT_PIN_PEPPER:string;PUSH_ENABLED?:string;WEB_PUSH_VAPID_PUBLIC_KEY?:string}
+function clientPushConfig(env:Env){const key=env.WEB_PUSH_VAPID_PUBLIC_KEY||'';const enabled=env.PUSH_ENABLED==='true'&&/^[A-Za-z0-9_-]{87}$/.test(key);return {enabled,vapidKey:enabled?key:'',defaultReceiving:true};}
 class HttpError extends Error {constructor(readonly status:number,message:string){super(message);}}
 const jwks=createRemoteJWKSet(new URL('https://www.googleapis.com/service_accounts/v1/jwk/securetoken@system.gserviceaccount.com'));
 async function user(sa:ServiceAccount,project:string,uid:string){
@@ -21,7 +23,7 @@ export default {async fetch(req:Request,env:Env):Promise<Response>{
  headers['Access-Control-Allow-Headers']='Authorization,Content-Type';headers['Access-Control-Allow-Methods']='POST,OPTIONS';
  const json=(body:unknown,status=200)=>new Response(JSON.stringify(body),{status,headers});
  if(req.method==='OPTIONS')return new Response(null,{status:204,headers});
- if(new URL(req.url).pathname==='/health')return json({ok:true,service:'wooriban-api',apiVersion:2,configured:!!env.FIREBASE_SERVICE_ACCOUNT&&!!env.STUDENT_PIN_PEPPER,features:{history:true,push:env.PUSH_ENABLED==='true'}});
+ if(new URL(req.url).pathname==='/health')return json({ok:true,service:'wooriban-api',apiVersion:2,configured:!!env.FIREBASE_SERVICE_ACCOUNT&&!!env.STUDENT_PIN_PEPPER,features:{history:true,push:clientPushConfig(env).enabled}});
  let stage='request';
  try{
   if(req.method!=='POST')throw new HttpError(405,'POST required');
@@ -64,7 +66,8 @@ export default {async fetch(req:Request,env:Env):Promise<Response>{
   if(route==='/pushDevice'){
    stage='pushDevice';
    const state=store.value(await store.get(statePath)) as State|null;if(!state)throw new HttpError(404,'학급이 설정되지 않았습니다.');
-   return json(await updatePushDevice(store,env.CLASS_ID,uid,state,data,env.PUSH_ENABLED==='true'));
+   if(data.action==='test')return json(await sendOwnPushTest(store,env.CLASS_ID,uid,state,data,()=>accessToken(sa),clientPushConfig(env).enabled));
+   return json(await updatePushDevice(store,env.CLASS_ID,uid,state,data,clientPushConfig(env).enabled));
   }
   const {action,p={},key}=data;
   const repository=new StateRepository(store,env.CLASS_ID);
@@ -77,7 +80,7 @@ export default {async fetch(req:Request,env:Env):Promise<Response>{
     for(const table of tables){const page=await repository.listHistory(uid,table,null,50);const rows=new Map(state[table].map(row=>[row.id,row]));for(const row of page.records)rows.set(row.id,row);state[table]=[...rows.values()];}
     for(const row of [...state.requests,...state.exams])row.version??=1;
    }
-   return json(state);
+   return json({...state,pushConfig:clientPushConfig(env)});
   }
   if(action==='readHistory'){
    stage='readHistory';
@@ -85,12 +88,12 @@ export default {async fetch(req:Request,env:Env):Promise<Response>{
    return json(await repository.listHistory(uid,p.table as HistoryTable,p.cursor,p.limit??25));
   }
   if(typeof key!=='string'||!/^[-a-zA-Z0-9_]{1,120}$/.test(key)||!p||typeof p!=='object'||Array.isArray(p))throw new HttpError(400,'요청 입력을 확인하세요.');
-  const pushEnabled=env.PUSH_ENABLED==='true';
+  const pushEnabled=clientPushConfig(env).enabled;
   stage='command';
   await repository.execute(uid,action,p,key,Date.now(),pushEnabled?{extraPaths:[pushControlPath(env.CLASS_ID)],plan:async({before,after,docs,now,writeCapacity})=>preparePushWrites(store,env.CLASS_ID,new Set(before.inbox.map(n=>n.id)),after,docs.get(pushControlPath(env.CLASS_ID))||null,now,writeCapacity)}:{});
   return json({ok:true});
- }catch(e){const status=e instanceof HttpError?e.status:e instanceof CommandRateLimitError?429:e instanceof UpstreamError||e instanceof TypeError?503:400;if(status>=500)console.error('request_failed',{stage,type:e instanceof TypeError?'TypeError':e instanceof UpstreamError?'UpstreamError':'ServerError',...(e instanceof UpstreamError?{upstreamStatus:e.upstreamStatus,upstreamCode:typeof e.upstreamCode==='string'&&/^[A-Z_]{1,40}$/.test(e.upstreamCode)?e.upstreamCode:undefined}:{})});return json({error:status>=500?'서버 연결을 확인한 뒤 다시 시도하세요.':e instanceof Error?e.message:'처리 실패'},status);}
+ }catch(e){const status=e instanceof HttpError||e instanceof PushTestError?e.status:e instanceof CommandRateLimitError?429:e instanceof UpstreamError||e instanceof TypeError?503:400;if(status>=500)console.error('request_failed',{stage,type:e instanceof TypeError?'TypeError':e instanceof UpstreamError?'UpstreamError':'ServerError',...(e instanceof UpstreamError?{upstreamStatus:e.upstreamStatus,upstreamCode:typeof e.upstreamCode==='string'&&/^[A-Z_]{1,40}$/.test(e.upstreamCode)?e.upstreamCode:undefined}:{})});return json({error:e instanceof PushTestError?e.message:status>=500?'서버 연결을 확인한 뒤 다시 시도하세요.':e instanceof Error?e.message:'처리 실패',...(e instanceof PushTestError?{code:e.code}:{})},status);}
 },async scheduled(_event:unknown,env:Env,ctx:{waitUntil(promise:Promise<unknown>):void}){
- if(env.PUSH_ENABLED!=='true')return;
+ if(!clientPushConfig(env).enabled)return;
  ctx.waitUntil((async()=>{const sa=JSON.parse(env.FIREBASE_SERVICE_ACCOUNT) as ServiceAccount;if(sa.project_id!==env.FIREBASE_PROJECT_ID)throw new UpstreamError('Server project mismatch');const store=new Store(env.FIREBASE_PROJECT_ID,()=>accessToken(sa));await dispatchPush(store,env.CLASS_ID,()=>accessToken(sa),{enabled:true,maxJobs:1,isUserActive:async uid=>{try{await user(sa,env.FIREBASE_PROJECT_ID,uid);return true;}catch(e){if(e instanceof HttpError&&e.status===401)return false;throw e;}}});})());
 }};

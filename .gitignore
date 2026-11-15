@@ -9,6 +9,8 @@ functions/.secret.local
 .wrangler/
 .dev.vars*
 work/
+__pycache__/
+*.pyc
 
 imports/
 roster*.xlsx

@@ -31,7 +31,7 @@ async function invoke<T=any>(name:string,data:object):Promise<{data:T}>{
  }finally{clearTimeout(timeout);}
 }
 export async function login(id:string,pw:string,google=false,remember=false){if(auth){if(auth.currentUser)await push.cleanup().catch(()=>{});await setPersistence(auth,remember?browserLocalPersistence:inMemoryPersistence);const r=google?await signInWithPopup(auth,new GoogleAuthProvider()):await signInWithEmailAndPassword(auth,id,pw);currentUid=r.user.uid;}else setDemoUser(id,remember);return refresh();}
-export async function refresh():Promise<State>{if(fn){const r=await invoke<State>('portal',{classId,action:'readState',clientVersion:2});return r.data;}return visible(demo,currentUid);}
+export async function refresh():Promise<State>{if(fn){const r=await invoke<State&{pushConfig?:{enabled:boolean;vapidKey:string}}>('portal',{classId,action:'readState',clientVersion:2});const state=r.data;push.configure(state.pushConfig||{enabled:false,vapidKey:''});const member=state.members.find(member=>member.id===auth?.currentUser?.uid);void push.sync(Boolean(member?.active)&&member?.notifications?.enabled!==false);return state;}return visible(demo,currentUid);}
 export async function send(action:string,p:Record<string,any>,key=crypto.randomUUID()){if(!navigator.onLine)throw Error('오프라인에서는 제출할 수 없습니다.');if(fn)await invoke('portal',{classId,action,p,key});else{const next=structuredClone(demo);command(next,currentUid,action,p,key);demo=next;}if(action==='preferences'&&p.enabled===false)await push.disableAll().catch(()=>{});return refresh();}
 export async function logout(){await push.cleanup().catch(()=>{});if(auth)await signOut(auth);clearDemoSession();currentUid='';demoListeners.forEach(f=>f());}
 
@@ -46,7 +46,7 @@ export async function loginStudent(studentNo:string,pin:string,remember=false):P
 
 export function observeSession(onState:(s:State|null)=>void,onError:(e:unknown)=>void){
  let sequence=0,active=true;
- async function restore(uid:string|null){const generation=++sequence;currentUid=uid||'';if(!uid){void push.pause();onState(null);return;}try{const state=await refresh();if(active&&sequence===generation){onState(state);if(state.members.find(m=>m.id===uid)?.notifications?.enabled===false)void push.pause();else void push.sync();}}catch(e){if(active&&sequence===generation){currentUid='';void push.pause();onState(null);onError(e);}}}
+ async function restore(uid:string|null){const generation=++sequence;currentUid=uid||'';if(!uid){void push.pause();onState(null);return;}try{const state=await refresh();if(active&&sequence===generation)onState(state);}catch(e){if(active&&sequence===generation){currentUid='';void push.pause();onState(null);onError(e);}}}
  if(auth){const stop=onAuthStateChanged(auth,u=>{void restore(u?.uid||null);},e=>{if(active){currentUid='';onState(null);onError(e);}});return()=>{active=false;sequence++;stop();};}
  const listener=()=>{void restore(currentUid||null);};demoListeners.add(listener);
  const changed=(e:StorageEvent)=>{if(e.key==='wooriban.demo-session'||e.key===null)void restore(loadDemoSession());};window.addEventListener('storage',changed);

@@ -5,11 +5,16 @@
   "compatibility_date": "2026-11-12",
   "workers_dev": true,
   "preview_urls": false,
-  "triggers": {"crons": ["*/5 * * * *"]},
+  "triggers": {
+    "crons": [
+      "* * * * *"
+    ]
+  },
   "vars": {
     "FIREBASE_PROJECT_ID": "wooriban-2027",
     "CLASS_ID": "2027-1-11",
     "PUSH_ENABLED": "false",
-    "ALLOWED_ORIGINS": "https://wooriban-2027.web.app,https://wooriban-2027.firebaseapp.com"
+    "ALLOWED_ORIGINS": "https://wooriban-2027.web.app,https://wooriban-2027.firebaseapp.com",
+    "WEB_PUSH_VAPID_PUBLIC_KEY": "BMOGd4gSbLcZ3xgaKWkJ1nOqtvewi2gbUmtI4A8FMpscyi1yuPEZq-esq-YD916iN47NZ69OGN2ihY_-8BvuEBU"
   }
 }

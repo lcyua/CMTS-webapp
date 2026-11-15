@@ -18,7 +18,7 @@ self.addEventListener('push',event=>{
   if(typeof id!=='string'||!/^[a-f0-9]{64}$/.test(id))return;
   const windows=await self.clients.matchAll({type:'window',includeUncontrolled:true});
   const visible=windows.filter(client=>new URL(client.url).origin===self.location.origin&&client.visibilityState==='visible');
-  if(visible.length){visible.forEach(client=>client.postMessage({type:'WOORIBAN_PUSH',id}));return;}
+  if(visible.length){visible.forEach(client=>client.postMessage({type:'WOORIBAN_PUSH',id}));if(payload?.data?.kind!=='self-test')return;}
   await self.registration.showNotification(PUSH_TITLE,{body:PUSH_BODY,icon:'/icon-192.png',badge:'/icon-192.png',tag:'wooriban-'+id,data:{wooriban:true},renotify:false});
  })());
 });
