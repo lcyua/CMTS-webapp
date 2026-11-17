@@ -4,6 +4,7 @@ import {balance,kstDate,type State} from '../src/domain';
 import {seed} from '../src/seed';
 import {Store,type Document} from '../worker/store';
 import {HISTORY_TABLES,StateRepository,partitionState,type Write} from '../worker/state-repository';
+import {digest,pinPassword} from '../worker/credentials';
 
 const project='demo-worker-firestore';
 const host=process.env.FIRESTORE_EMULATOR_HOST;
@@ -14,7 +15,7 @@ const nativeFetch=globalThis.fetch;
 globalThis.fetch=(async(input,init)=>{
  const url=typeof input==='string'?input:input instanceof URL?input.href:input.url;
  if(!url.startsWith(`http://${host}/v1/projects/${project}/databases/(default)/documents`))throw Error('The emulator test refuses external network access.');
- const response=await nativeFetch(input,init);
+ const response=await nativeFetch(input,{...init,redirect:'error'});
  if(!response.ok&&url.endsWith(':runQuery'))console.error('EMULATOR_QUERY_ERROR',JSON.stringify({url,query:JSON.parse(String(init?.body)),response:await response.clone().json()}));
  return response;
 }) as typeof fetch;
@@ -23,14 +24,15 @@ const stores:EmulatorStore[]=[];
 
 class EmulatorStore extends Store {
  readonly paths=new Set<string>();
+ readonly reads:string[]=[];
  readonly scope:string;
  constructor(classId:string){super(project,async()=>'owner');this.scope=`classes/${classId}/`;this.base=`http://${host}/v1/projects/${project}/databases/(default)/documents`;stores.push(this);}
  private guard(path:string){if(!path.startsWith(this.scope)||path.includes('..'))throw Error('Test operation escaped its synthetic class.');}
- override async get(path:string):Promise<Document|null>{this.guard(path);return super.get(path);}
- override async getMany(paths:string[]){paths.forEach(path=>this.guard(path));return super.getMany(paths);}
+ override async get(path:string):Promise<Document|null>{this.guard(path);this.reads.push(path);return super.get(path);}
+ override async getMany(paths:string[]){paths.forEach(path=>this.guard(path));this.reads.push(...paths);return super.getMany(paths);}
  override async put(writes:Write[]){for(const write of writes){this.guard(write.path);this.paths.add(write.path);}return super.put(writes);}
  override async request(url:string,init:RequestInit={}){if(!url.startsWith(this.base)||!url.startsWith(`http://${host}/`))throw Error('Only this loopback demo database may be contacted.');return super.request(url,init);}
- async clean(){const paths=[...this.paths];for(let start=0;start<paths.length;start+=400)await this.request(`${this.base}:commit`,{method:'POST',body:JSON.stringify({writes:paths.slice(start,start+400).map(path=>({delete:`projects/${project}/databases/(default)/documents/${path}`}))})});}
+ async clean(){const paths=[...this.paths];for(let start=0;start<paths.length;start+=400)await this.request(`${this.base}:commit`,{method:'POST',body:JSON.stringify({writes:paths.slice(start,start+400).map(path=>({delete:`projects/${project}/databases/(default)/documents/${path}`}))})});for(let start=0;start<paths.length;start+=100)assert.ok((await this.getMany(paths.slice(start,start+100))).every(document=>document===null),'A tracked synthetic document survived cleanup.');}
 }
 function fixture():State{
  const state=seed();for(const table of HISTORY_TABLES)state[table]=[];
@@ -39,6 +41,7 @@ function fixture():State{
 }
 function check(name:string){console.log(`PASS ${name}`);}
 
+const mainErrors:unknown[]=[];
 try{
  const classId='worker-rest-'+suffix,store=new EmulatorStore(classId),repository=new StateRepository(store,classId),state=fixture(),now=Date.now();
  await store.put([{path:repository.statePath,value:state,previous:null}]);
@@ -89,8 +92,36 @@ try{
  const firstPage=await largeRepository.listHistory('student1','events',null,50);assert.equal(firstPage.records.length,50);assert.ok(firstPage.nextCursor);
  const lastPage=await largeRepository.listHistory('student1','events',firstPage.nextCursor,50);assert.equal(lastPage.records.length,23);
  assert.equal(new Set([...firstPage.records,...lastPage.records].map(row=>row.historyId)).size,73);check('501-row inequality pagination, generation paths and full bounded history');
- console.log(JSON.stringify({ok:true,project,host,checks:6,syntheticDocuments:[...stores].reduce((count,item)=>count+item.paths.size,0),productionAccess:false}));
+ const profileClass='worker-rest-profile-'+suffix,profileStore=new EmulatorStore(profileClass),profileRepository=new StateRepository(profileStore,profileClass),profileState=fixture();
+ const profileUIDs=profileState.members.map(member=>member.id).sort(),profilePath=async(studentNo:string)=>`classes/${profileClass}/pinAccounts/${await digest(profileClass+':'+studentNo)}`;
+ const originalPath=await profilePath('00001'),renamedPath=await profilePath('00101');
+ const credential={uid:'student1',studentNo:'00001',active:true,scheme:'firebase-password-v1',salt:'e'.repeat(32),authEmail:'student1@students.wooriban-2027.invalid',version:1,createdAt:now};
+ await profileStore.put([{path:profileRepository.statePath,value:profileState,previous:null},{path:originalPath,value:credential,previous:null}]);
+ const originalDerived=await pinPassword('0123','synthetic-native-pepper-'.repeat(3),credential.salt),readsBeforeName=profileStore.reads.length;
+ await profileRepository.execute('teacher','memberProfile',{uid:'student1',name:'  Synthetic Renamed Student  ',studentNo:'00001',previousStudentNo:'00001',version:1},'profile-name',now);
+ assert.ok(profileStore.reads.slice(readsBeforeName).every(path=>!path.includes('/pinAccounts/')),'Name-only edits must not read credentials.');
+ const named=await profileRepository.readState('teacher');assert.equal(named.members.find(member=>member.id==='student1')?.name,'Synthetic Renamed Student');assert.equal(named.members.find(member=>member.id==='student1')?.profileVersion,2);
+ assert.deepEqual(profileStore.value(await profileStore.get(originalPath)),credential);
+ const rename={uid:'student1',name:'Synthetic Renamed Student',studentNo:'00101',previousStudentNo:'00001',version:2};
+ await profileRepository.execute('teacher','memberProfile',rename,'profile-rename',now+1);
+ const moved=profileStore.value(await profileStore.get(renamedPath)),retired=profileStore.value(await profileStore.get(originalPath));
+ for(const key of ['uid','salt','authEmail','active','scheme'] as const)assert.equal(moved[key],credential[key]);
+ assert.equal(moved.studentNo,'00101');assert.equal(moved.version,2);assert.equal(retired.active,false);assert.equal(retired.scheme,'student-number-retired-v1');assert.equal(retired.salt,undefined);assert.equal(retired.authEmail,undefined);
+ const renamed=await profileRepository.readState('student1');assert.equal(renamed.members.find(member=>member.id==='student1')?.studentNo,'00101');assert.deepEqual(renamed.members.map(member=>member.id).sort(),profileUIDs);
+ const readsBeforeRetry=profileStore.reads.length;assert.equal((await profileRepository.execute('teacher','memberProfile',rename,'profile-rename',now+2)).duplicate,true);assert.ok(profileStore.reads.slice(readsBeforeRetry).every(path=>!path.includes('/pinAccounts/')));
+ await profileRepository.execute('teacher','memberProfile',{uid:'student1',name:'Synthetic Renamed Student',studentNo:'00001',previousStudentNo:'00101',version:3},'profile-revert',now+3);
+ const restoredCredential=profileStore.value(await profileStore.get(originalPath)),retiredTypo=profileStore.value(await profileStore.get(renamedPath)),restoredProfile=await profileRepository.readState('teacher');
+ for(const key of ['uid','salt','authEmail','active','scheme'] as const)assert.equal(restoredCredential[key],credential[key]);
+ assert.equal(restoredCredential.version,3);assert.equal(retiredTypo.active,false);assert.equal(retiredTypo.salt,undefined);assert.equal(retiredTypo.authEmail,undefined);
+ assert.equal(restoredProfile.members.find(member=>member.id==='student1')?.studentNo,'00001');assert.equal(restoredProfile.members.find(member=>member.id==='student1')?.profileVersion,4);assert.deepEqual(restoredProfile.members.map(member=>member.id).sort(),profileUIDs);
+ assert.equal(await pinPassword('0123','synthetic-native-pepper-'.repeat(3),restoredCredential.salt),originalDerived);
+ const profileAudits=await profileRepository.listHistory('teacher','audits');assert.equal(profileAudits.records.length,3);assert.doesNotMatch(JSON.stringify(profileAudits.records),/authEmail|salt|firebase-password-v1|synthetic-native-pepper/);assert.doesNotMatch(JSON.stringify(profileAudits.records.map(record=>record.input)),/0123/);check('native profile rename, retired-number revert, credential preservation and zero-read name edits');
+ console.log(JSON.stringify({ok:true,project,host,checks:7,syntheticDocuments:[...stores].reduce((count,item)=>count+item.paths.size,0),productionAccess:false}));
+}catch(error){mainErrors.push(error);throw error;
 }finally{
- for(const store of stores.reverse()){await store.clean();assert.equal(await store.get(store.scope+'private/state'),null);}
- globalThis.fetch=nativeFetch;console.log('CLEANUP synthetic class documents removed');
+ const cleanupErrors:unknown[]=[];
+ try{for(const store of stores.reverse())try{await store.clean();assert.equal(await store.get(store.scope+'private/state'),null);}catch(error){cleanupErrors.push(error);}}
+ finally{globalThis.fetch=nativeFetch;}
+ if(cleanupErrors.length)throw new AggregateError([...mainErrors,...cleanupErrors],'Synthetic document cleanup failed; all classes were attempted.');
+ console.log('CLEANUP synthetic class documents removed and verified');
 }

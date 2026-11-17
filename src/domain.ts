@@ -110,6 +110,13 @@ export function command(s:State,actor:string,action:string,p:RecordData,key:stri
  }else if(action==='member'){
   requireTeacher();boolean(p.active,'학생 활성 상태');const delegations=strings(p.delegations??[],'편집 권한',2,value=>['seat','cleaning'].includes(value));
   const m=s.members.find(m=>m.id===p.uid&&m.role==='student');if(!m)throw Error('학생이 없습니다.');m.active=p.active;m.delegations=[...delegations];
+ }else if(action==='memberProfile'){
+  requireTeacher();const target=s.members.find(m=>m.id===p.uid&&m.role==='student');if(!target)throw Error('학생이 없습니다.');
+  const version=target.profileVersion??1;
+  if(!Number.isSafeInteger(version)||version<1||version>=2147483647||p.version!==version||p.previousStudentNo!==target.studentNo)throw Error('학생정보가 변경되었습니다. 최신 정보를 다시 불러오세요.');
+  if(s.members.some(m=>m.id!==target.id&&m.role==='student'&&m.studentNo===p.studentNo))throw Error('이미 등록된 학번입니다. 비활성 학생의 학번도 중복 사용할 수 없습니다.');
+  const name=p.name.trim();if(target.name===name&&target.studentNo===p.studentNo)return;
+  target.name=name;target.studentNo=p.studentNo;target.profileVersion=version+1;target.profileUpdatedAt=now;
  }else if(action==='preferences'){
   boolean(p.enabled,'알림 설정');if((member.notifications?.enabled!==false)===p.enabled)return;member.notifications={...member.notifications,enabled:p.enabled};
  }else if(action==='notify'){
@@ -123,8 +130,10 @@ export function command(s:State,actor:string,action:string,p:RecordData,key:stri
 }
 export function visible(s:State,uid:string,now=Date.now()):State {
  const m=s.members.find(m=>m.id===uid);if(!m?.active||!['student','teacher'].includes(m.role))throw Error('계정이 비활성화되었습니다.');
- const out=structuredClone(s);if(m.role==='teacher')return out;
- out.members=out.members.map(x=>x.id===uid?x:{id:x.id,name:x.name,role:x.role,active:x.active});
+ const out=structuredClone(s);
+ const profileFields=['id','name','studentNo','role','active','delegations','notifications','profileVersion','profileUpdatedAt'];
+ out.members=out.members.map(x=>{const result=Object.fromEntries((m.role==='teacher'||x.id===uid?profileFields:['id','name','role','active']).filter(field=>Object.hasOwn(x,field)).map(field=>[field,x[field]]));if(Object.hasOwn(result,'notifications'))result.notifications=typeof x.notifications?.enabled==='boolean'?{enabled:x.notifications.enabled}:{};return result;});
+ if(m.role==='teacher')return out;
  for(const table of ['lots','events','requests','attempts','exams','inbox'] as const)out[table]=out[table].filter(x=>x.uid===uid);
  out.quizzes=out.quizzes.filter(q=>q.active&&q.date===kstDate(now)).map(({answer,explanation,...q})=>q);out.audits=[];out.payouts=[];return out;
 }

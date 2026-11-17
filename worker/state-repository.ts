@@ -1,6 +1,7 @@
 import {command,visible,type State,type RecordData} from '../src/domain';
 import {Store,Conflict,encode,type Document} from './store';
 import {commandInput} from '../src/validation';
+import {studentProfileOptions} from './student-profile';
 
 export const HISTORY_TABLES=['audits','events','attempts','lots','inbox','payouts','requests','exams','quizzes','notices'] as const;
 export type HistoryTable=typeof HISTORY_TABLES[number];
@@ -93,12 +94,14 @@ export class StateRepository {
  }
  async execute(uid:string,action:string,p:RecordData,key:string,now=Date.now(),options:ExecuteOptions={}){
   commandInput(action,p,key);const input=JSON.stringify({action,p}),receiptPath=await this.receiptPath(uid,key);
+  if(action==='memberProfile')options=await studentProfileOptions(this.store,this.classId,p,options);
   for(let attempt=0;attempt<8;attempt++){
-   const stateDoc=await this.store.get(this.statePath);if(!stateDoc)throw Error('학급이 설정되지 않았습니다.');const source=this.store.value(stateDoc) as StoredState;const me=member(source,uid);if(['points','payout','save','member','notify'].includes(action)&&me.role!=='teacher')throw Error('교사 권한이 필요합니다.');if(['shop','quiz','exam'].includes(action)&&me.role!=='student')throw Error('학생 계정으로 이용하세요.');if(['requestStatus','examStatus'].includes(action)&&p.status!=='cancelled'&&me.role!=='teacher')throw Error('교사 권한이 필요합니다.');const meta:Metadata=structuredClone(source._storage||initialMeta());if(meta.version!==1)throw Error('지원하지 않는 저장소 버전입니다.');const generation=meta.generation;
+   const stateDoc=await this.store.get(this.statePath);if(!stateDoc)throw Error('학급이 설정되지 않았습니다.');const source=this.store.value(stateDoc) as StoredState;const me=member(source,uid);if(['points','payout','save','member','memberProfile','notify'].includes(action)&&me.role!=='teacher')throw Error('교사 권한이 필요합니다.');if(['shop','quiz','exam'].includes(action)&&me.role!=='student')throw Error('학생 계정으로 이용하세요.');if(['requestStatus','examStatus'].includes(action)&&p.status!=='cancelled'&&me.role!=='teacher')throw Error('교사 권한이 필요합니다.');const meta:Metadata=structuredClone(source._storage||initialMeta());if(meta.version!==1)throw Error('지원하지 않는 저장소 버전입니다.');const generation=meta.generation;
    const receiptDoc=await this.store.get(receiptPath),receipt=this.store.value(receiptDoc);if(receipt){if(receipt.actor!==uid||receipt.key!==key||receipt.input!==input)throw Error('동일 요청 키의 입력이 다릅니다.');return {duplicate:true,migrated:0,legacyRemaining:legacyCount(source)};}
    const previousGate=meta.gates?.[uid];const gate=!previousGate||now>=previousGate.start+60000?{start:now,count:0}:{...previousGate};if(gate.count>=30)throw new CommandRateLimitError();gate.count++;(meta.gates??={})[uid]=gate;
-   const extraPaths=[...new Set(options.extraPaths||[])];const extraDocs=extraPaths.length?await this.store.getMany(extraPaths):[];const docs=new Map(extraPaths.map((path,i)=>[path,extraDocs[i]]));
    const state=structuredClone(source);const loaded=await this.hydrate(state,uid,action,p,now);const before=structuredClone(state);command(state,uid,action,p,key,now);
+   // Authorize and validate the current profile/version before reading private extras.
+   const extraPaths=[...new Set(options.extraPaths||[])];const extraDocs=extraPaths.length?await this.store.getMany(extraPaths):[];const docs=new Map(extraPaths.map((path,i)=>[path,extraDocs[i]]));
    const writes=new Map<string,Write>();const addWrite=(write:Write)=>{const prior=writes.get(write.path);if(prior&&!same(prior.value,write.value))throw Error('Conflicting writes in command.');writes.set(write.path,write);};
    if(!source._storage)addWrite({path:`classes/${this.classId}/migrationBackups/${await hash(stateDoc.updateTime)}`,value:{state:source,sourceUpdateTime:stateDoc.updateTime,createdAt:now},previous:null});
    const legacyReplay=source.audits.some(a=>a.actor===uid&&auditKey(a)===key&&a.input===input);

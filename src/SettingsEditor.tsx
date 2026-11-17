@@ -3,6 +3,8 @@ import {kstDate,RecordData,State} from './domain';
 import {settingData} from './validation';
 import {getHistory} from './api';
 import {cleanDefinition,mergeDefinitionRows} from './settings-history';
+import {QuizBankImport} from './QuizBankImport';
+import type {QuizBankDraft} from './quiz-bank';
 import './settings-editor.css';
 
 const titles={notices:'공지',items:'상점 품목',roles:'학급 역할',allowances:'수당',quizzes:'일일 문제',examTypes:'시험 종목',settings:'운영 안내'};
@@ -56,6 +58,11 @@ export function SettingsEditor({s,busy,save,initialTable='notices'}:Props){
   if(dirty&&!window.confirm('작성 중인 변경사항을 취소하고 최신 내용을 불러올까요?'))return;
   setEditor(open(effectiveState,table,entryId));setDirty(false);setError('');setMessage('');
  }
+ function importQuiz(draft:QuizBankDraft){
+  if(disabled)return false;
+  if(dirty&&!window.confirm('작성 중인 변경사항을 취소하고 선택한 문제를 새 초안으로 불러올까요?'))return false;
+  setEditor({table:'quizzes',id:'',snapshot:null,draft:{...draft,options:[...draft.options]}});setDirty(true);setError('');setMessage('문제은행에서 새 초안을 불러왔습니다. 아직 저장되지 않았습니다.');return true;
+ }
  async function loadEarlier(target:DefinitionTable,restart=false){
   const page=pages[target];if(page.loading||!restart&&page.loaded&&!page.cursor)return;
   setPages(previous=>({...previous,[target]:{...previous[target],loading:true,error:''}}));
@@ -108,6 +115,7 @@ export function SettingsEditor({s,busy,save,initialTable='notices'}:Props){
   </div>}
   {stale&&<div className="error" role="alert"><p>이 항목이 다른 곳에서 변경되었습니다. 최신 내용을 불러온 뒤 수정해 주세요.</p><button type="button" className="secondary" disabled={disabled} onClick={reload}>최신 내용 불러오기</button></div>}
   {frozen&&<p className="info">제출이 시작됐거나 지난 날짜의 문제입니다. 내용과 정답은 보존하며 사용 여부만 변경할 수 있습니다. 다른 날짜의 문제는 새 항목으로 작성해 주세요.</p>}
+  {table==='quizzes'&&<QuizBankImport disabled={disabled} onApply={importQuiz}/>}
   <form aria-label={`${titles[table]} 편집`} onSubmit={event=>void submit(event)}>
    <fieldset disabled={disabled}>
     <legend>{table==='settings'?settingTitles[entryId]:snapshot?`${titles[table]} 수정`:`새 ${titles[table]}`}</legend>

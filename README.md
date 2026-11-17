@@ -7,6 +7,12 @@
 - 저장소 작업: [PR #1](https://github.com/lcyua/CMTS-webapp/pull/1), `setup/firebase-workers-free`
 - Firebase 프로젝트 `wooriban-2027`, 학급 `2027-1-11`, Standard Firestore `asia-northeast3`
 
+## 후속 수정 검토 — 2026-11-17
+
+3행 6열·가로 두 칸 짝꿍 좌석표, 교사 전용 이름·학번 편집, 스프레드시트 CSV 문제은행 가져오기를 소스와 비공개 검토 화면에 준비했습니다. 이 후속 수정의 실서비스 배포는 아직 하지 않았습니다. 검토 화면은 가상 학생18명만 사용하고 실제 Firebase·학생 계정에 연결하지 않습니다.
+
+[비공개 화면 검토와 수정 메모](REVIEW.md)를 열어 다음 변경을 정할 수 있습니다. 학생정보는 [보안·PIN 처리](docs/STUDENT-PRIVACY.md), 퀴즈는 [비공개 문제은행 사용](docs/QUIZ-BANK.md), 현재 검토·배포 구분은 [NEXT-STEPS.md](NEXT-STEPS.md)에 기록합니다. 기존18명 계정·PIN은 재발급하지 않습니다.
+
 ## 배포와 검증 상태
 
 현재 Worker는 발송 활성화 버전 `313127d5-a042-438e-9070-d2b84288b10a`이며 시작 시간은 2ms, cron은 1분입니다. 사용자가 FCM 설정 도구의 성공 문구를 확인한 뒤 기존 비밀 설정을 유지해 배포했고 실제 `/health`에서 `apiVersion=2`, `configured=true`, `features.history=true`, `features.push=true`를 확인했습니다. 준비 버전 `fec4aac2-c0d4-4296-888d-bf988e4f27cd`와 교사 로그인 수정 버전 `84269e08-87cf-4a1e-8066-d6bbdeb9ff96`는 이전 배포입니다. 비로그인 테스트 발송 요청은 401로 거부됩니다. 기본 기능 배포 당시(`3c140c5b-1b47-4859-a625-e9a75af1708f`)의 익명 학번 목록 6개 CPU 표본은 2~10ms였습니다. 인증된 portal CPU·운영 데이터 이전·장기 무료 쿼터는 아직 검증하지 않았습니다.

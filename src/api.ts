@@ -37,7 +37,7 @@ export async function logout(){await push.cleanup().catch(()=>{});if(auth)await 
 
 export async function loginStudent(studentNo:string,pin:string,remember=false):Promise<State>{
  if(!/^\d{1,30}$/.test(studentNo)||!/^\d{4}$/.test(pin))throw Error('학번과 4자리 숫자 비밀번호를 입력하세요.');
- if(!auth||!fn){if(pin!=='2468'||!['01101','01102'].includes(studentNo))throw Error('데모 학번은 01101 또는 01102, 코드는 2468입니다.');setDemoUser(studentNo==='01101'?'student1':'student2',remember);return refresh();}
+ if(!auth||!fn){const student=demo.members.find(m=>m.role==='student'&&m.active&&m.studentNo===studentNo);if(pin!=='2468'||!student)throw Error('데모 학번과 코드 2468을 확인하세요.');setDemoUser(student.id,remember);return refresh();}
  if(auth.currentUser)await push.cleanup().catch(()=>{});
  await setPersistence(auth,remember?browserLocalPersistence:inMemoryPersistence);
  const response=await invoke<{token:string}>('studentLogin',{classId,studentNo,pin});

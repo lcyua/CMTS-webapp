@@ -29,7 +29,7 @@ export function strings(value:unknown,label:string,max:number,allowed?:(value:st
 const commandFields:Record<string,readonly string[]>={
  shop:['itemId','date'],requestStatus:['id','status','version','reason'],points:['uid','amount','reason'],payout:['month'],quiz:['choice','version'],
  exam:['id','version','typeId','date','start','end'],examStatus:['id','status','version','reason'],plan:['id','version','assignments'],
- save:['table','id','version','data'],member:['uid','active','delegations'],preferences:['enabled'],notify:['uids','body'],read:['id']
+ save:['table','id','version','data'],member:['uid','active','delegations'],memberProfile:['uid','name','studentNo','previousStudentNo','version'],preferences:['enabled'],notify:['uids','body'],read:['id']
 };
 export function commandInput(action:unknown,p:unknown,key:unknown):asserts p is RecordData {
  if(typeof action!=='string'||!Object.hasOwn(commandFields,action))throw Error('지원하지 않는 명령입니다.');
@@ -38,6 +38,10 @@ export function commandInput(action:unknown,p:unknown,key:unknown):asserts p is 
  for(const field of ['id','uid','itemId','typeId'])if(p[field]!==undefined&&p[field]!=='')id(p[field]);
  if(p.version!==undefined)integer(p.version,1,2147483647,'버전');
  if(p.reason!==undefined)text(p.reason,'처리 사유',2000,false);
+ if(action==='memberProfile'){
+  id(p.uid,'학생');text(p.name,'학생 이름',100);integer(p.version,1,2147483647,'학생정보 버전');
+  for(const field of ['studentNo','previousStudentNo'])if(typeof p[field]!=='string'||!/^\d{1,30}$/.test(p[field]))throw Error('학번은 앞자리 0을 포함한 숫자 문자열로 입력하세요.');
+ }
 }
 
 const settingFields:Record<string,readonly string[]>={

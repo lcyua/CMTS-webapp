@@ -10,6 +10,19 @@
 - **최종 Hosting 수정본 배포 확인:** 2026-11-16 사용자가 `Deploy complete`를 확인했고 실제 HTML에서 `index-Du6E2s1x.js` 참조를 직접 확인했습니다. 최종 SW SHA-256 `c629e245c86a775ecdfe8f1ac20be5d70e9210f8817eb13629e52dc03dac20e6`, push-worker SHA-256 `b9316898462c6bd57ed6f7a9dc49c1d1b3e666a831ec828a692f36d014ae59d2`가 준비한 패키지와 일치하며 공개 브라우저 검사 16/16을 통과했습니다. 페이지 오류와 금지 작업 시도는 모두 0개입니다. 직전 푸시 화면 `index-1yDFAHFr.js`는 당시 SW·push-worker 해시 일치와 공개 검사 16개를 통과한 이전 배포입니다. 더 앞선 기본 기능 번들은 `index-BKi-e-_2.js`였습니다. 새 Hosting release ID는 조회하지 않았으며 기존 `293841b2aa5c57a6`은 과거 배포입니다.
 - 사용자 공식 Cloudflare device 로그인 완료와 대상 계정을 확인한 뒤 `wrangler deploy --keep-vars`로 기존 비밀 설정을 유지해 배포했습니다. Firebase·Cloudflare 결제 연결, Blaze·Workers 유료 업그레이드, Functions·Secret Manager 배포는 하지 않았습니다.
 
+## 2026-11-17 추가 수정 — 비공개 화면 검토 단계
+
+- 사용자 요청에 따라 좌석표를 3행 6열, 가로 1·2/3·4/5·6열 짝꿍으로 준비했습니다. 기존 UID·배정 순서·좌석 편집 권한을 유지하며 실제 배정 데이터를 재생성하지 않습니다.
+- 교사 전용 이름·학번 편집기를 준비했습니다. 학생 고유 UID와 기존 PIN을 유지하며, 학번 변경 시 로그인 매핑·이전 학번 폐쇄·프로필·감사를 원자적으로 저장합니다. PIN 원문 조회·변경·재설정 기능은 추가하지 않았습니다. [학생정보 보안](docs/STUDENT-PRIVACY.md) 참조.
+- 비공개 스프레드시트 문제은행을 CSV로 내려받아 로컬 검토 후 한 문제를 비활성 새 초안으로 불러옵니다. 기존 교사 저장 버튼으로만 저장·출제하며 원본 시트를 공개하거나 자동 대량 출제하지 않습니다. [문제은행 절차](docs/QUIZ-BANK.md) 참조.
+- 전체 단위 검사 **150/150**, TypeScript·운영 빌드·Worker strict·dry-run 통과. 실제 로컬 Firestore Emulator **7/7** 통합 그룹에서 프로필 매핑 변경·동일 UID 복귀를 확인하고 합성 문서 **1,219개**를 삭제·재조회 검증했습니다. 실제 학생 계정·PIN·원본 시트·credential 문서를 읽거나 변경하지 않았습니다.
+- 신규 기능은 PR 소스와 실제 정보가 없는 소유자 전용 검토 Site에 준비합니다. 이 기능들의 실서비스 Worker·Firebase Hosting 배포는 아직 하지 않았으며, 위 Chrome 푸시 배포·실수신 완료 사실과 구분합니다. 화면 주석을 반영한 뒤 최종 배포를 진행합니다.
+- 현재 익명 학번 선택 목록의 직접입력 전환 여부를 사용자에게 선택 요청했습니다. 기존 로그인 흐름은 선택 답변 전까지 유지하며 현재 학번 목록 공개 사실을 보안 문서에 명시합니다.
+- 검토 Site 프로젝트 `appgprj_6afc08ccf6688191917dcfaf2481c123`, 로컬 소스 `/workspace/sites/wooriban-layout-review-20261117`. 소유자 1명·그룹 없음의 private audience를 확인했습니다. 실제 Firebase 설정과 서버 소스·학생정보를 복사하지 않고 가상 교사·학생18명을 사용합니다.
+- 검토 화면: https://wooriban-layout-review-20261117.flowinglapwing8.chatgpt.site . 요소 선택형 수정 메모를 포함한 비공개 게시가 성공했습니다. Site source commit `d96b5801a315c54d0695e362fb8283fd20f55473`, saved version `appgprj_6afc08ccf6688191917dcfaf2481c123~appgver_95dc2d3124bc8191b0bf7c477bf6de9f`, deployment `appgdep_6afc13a1a8488191ba7be372fc43f03e`입니다. 이후 수정도 같은 Site ID를 재사용합니다.
+- ‘수정 메모 → 요소 선택 → 메모 저장 → 모든 메모 복사’로 이 대화에 전달합니다. 메모는 브라우저 로컬에만 보관하고 입력값·PIN은 자동 수집하지 않습니다. 자동 채팅 전송은 없습니다. [검토 안내](REVIEW.md) 참조.
+- 관리형 미리보기 relay와 Cloud browser 연결은 환경 오류로 사용할 수 없어 자동 시각 QA를 완료하지 못했습니다. 타입·단위·SSR·네이티브 배포 확인과 사용자 화면 검토를 구분합니다.
+
 ## 기존 계정·PIN 보호
 
 **학생 발급·학급 초기화를 다시 실행하지 않습니다.** 기존 18명 계정·PIN·포인트를 재발급하거나 덮어쓰지 않았습니다. 원본 시트의 기존 비밀번호 열도 조회하지 않았습니다. PIN·명단·서버 키·pepper·운영자 OAuth 정보는 Git과 정적 배포에서 제외합니다.
