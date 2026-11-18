@@ -1,4 +1,5 @@
 import {boolean,calendarDate,calendarMonth,clockTime,commandInput,id,integer,settingData,strings,text} from './validation';
+import {examTimesConflict} from './exam-time';
 export type RecordData = Record<string, any>;
 export interface State { members:RecordData[]; notices:RecordData[]; items:RecordData[]; roles:RecordData[]; allowances:RecordData[]; lots:RecordData[]; events:RecordData[]; requests:RecordData[]; quizzes:RecordData[]; attempts:RecordData[]; exams:RecordData[]; examTypes:RecordData[]; plans:RecordData[]; inbox:RecordData[]; audits:RecordData[]; payouts:RecordData[]; settings:RecordData[] }
 export const tables: (keyof State)[]=['members','notices','items','roles','allowances','lots','events','requests','quizzes','attempts','exams','examTypes','plans','inbox','audits','payouts','settings'];
@@ -73,14 +74,19 @@ export function command(s:State,actor:string,action:string,p:RecordData,key:stri
   if(correct)grant(actor,10,'일일문제풀이',date+'_'+actor);else event(actor,'quiz',0,'일일문제풀이');
  }else if(action==='exam'){
   requireStudent();const type=s.examTypes.find(t=>t.id===p.typeId&&t.active);
-  if(!type||!calendarDate(p.date)||p.date<kstDate(now)||!clockTime(p.start)||!clockTime(p.end)||p.start>=p.end)throw Error('시험 종류·날짜·시간을 확인하세요.');
+  const hasEnd=p.end!==undefined;
+  if(!type||!calendarDate(p.date)||p.date<kstDate(now)||!clockTime(p.start)||hasEnd&&(!clockTime(p.end)||p.start>=p.end))throw Error('시험 종류·날짜·시간을 확인하세요.');
   const existing=p.id?s.exams.find(e=>e.id===p.id):null;
   if(p.id&&(!existing||existing.uid!==actor||existing.status!=='pending'))throw Error('수정할 수 없는 신청입니다.');
   if(existing&&p.version!==(existing.version??1))throw Error('시험 신청이 변경되었습니다. 다시 불러오세요.');
   if(!existing&&s.exams.filter(e=>e.uid===actor&&(e.status==='pending'||e.status==='approved'&&e.date>=kstDate(now))).length>=20)throw Error('진행 중인 시험 신청은 학생당 20건까지 가능합니다.');
-  if(s.exams.some(e=>e.id!==p.id&&e.uid===actor&&e.date===p.date&&['pending','approved'].includes(e.status)&&e.start<p.end&&e.end>p.start))throw Error('시간이 겹치는 신청이 있습니다.');
-  const data={uid:actor,studentNo:member.studentNo,name:member.name,typeId:type.id,typeName:type.name,date:p.date,start:p.start,end:p.end,status:'pending',version:existing?(existing.version??1)+1:1};
-  if(existing)Object.assign(existing,data,{updatedAt:now});else add('exams',{...data,at:now});
+  if(s.exams.some(e=>e.id!==p.id&&e.uid===actor&&e.date===p.date&&['pending','approved'].includes(e.status)&&examTimesConflict(e,p)))throw Error('시간이 겹치는 신청이 있습니다.');
+  const data={uid:actor,studentNo:member.studentNo,name:member.name,typeId:type.id,typeName:type.name,date:p.date,start:p.start,timeMode:hasEnd?'interval':'start',...(hasEnd?{end:p.end}:{}),status:'pending',version:existing?(existing.version??1)+1:1};
+  if(existing){
+   add('audits',{action:'examRevision',examId:existing.id,before:structuredClone(existing),at:now,actor});
+   if(!hasEnd)delete existing.end;
+   Object.assign(existing,data,{updatedAt:now});
+  }else add('exams',{...data,at:now});
  }else if(action==='examStatus'){
   const exam=s.exams.find(e=>e.id===p.id);if(!exam||exam.status!=='pending')throw Error('처리할 수 없는 신청입니다.');
   if(p.status==='cancelled'){if(exam.uid!==actor)throw Error('본인 신청만 취소 가능합니다.');}else{requireTeacher();if(!['approved','rejected'].includes(p.status))throw Error('잘못된 상태입니다.');}
@@ -89,9 +95,19 @@ export function command(s:State,actor:string,action:string,p:RecordData,key:stri
  }else if(action==='plan'){
   const plan=s.plans.find(x=>x.id===p.id);if(!plan||(plan.kind==='seat'?(teacher||!member.delegations?.includes('seat')):(!teacher&&!member.delegations?.includes(plan.kind))))throw Error('배치 편집 권한이 없습니다.');
   if(plan.version!==p.version)throw Error('다른 사용자가 수정했습니다. 다시 불러오세요.');
-  if(!Array.isArray(p.assignments)||p.assignments.length!==plan.assignments.length||p.assignments.some((uid:unknown)=>typeof uid!=='string'))throw Error('배치 칸 수를 변경할 수 없습니다.');
+  let labels:string[]|undefined;
+  if(plan.kind==='cleaning'){
+   if(p.assignments.length<plan.assignments.length)throw Error('기존 청소구역은 삭제할 수 없습니다.');
+   if(p.assignments.length>60)throw Error('청소구역은 60개까지 설정할 수 있습니다.');
+   if(p.labels!==undefined){
+    if(!teacher)throw Error('청소구역 이름·추가는 교사만 변경할 수 있습니다.');
+    if(p.labels.length!==p.assignments.length)throw Error('청소구역 이름과 배정 칸 수를 확인하세요.');
+    labels=p.labels.map((label:string)=>label.trim().normalize('NFC'));
+   }
+   if(p.assignments.length!==plan.assignments.length&&(!teacher||!labels))throw Error('청소구역 추가는 교사가 이름과 함께 저장해야 합니다.');
+  }else if(p.labels!==undefined||p.assignments.length!==plan.assignments.length)throw Error('배치 칸 수·이름을 변경할 수 없습니다.');
   const uids=p.assignments.filter(Boolean);if(new Set(uids).size!==uids.length||uids.some((uid:string)=>!activeStudent(uid)))throw Error('학생 중복 또는 잘못된 배정입니다.');
-  add('audits',{action:'planRevision',planId:plan.id,before:structuredClone(plan),at:now,actor});Object.assign(plan,{assignments:[...p.assignments],version:plan.version+1,actor,updatedAt:now});
+  add('audits',{action:'planRevision',planId:plan.id,before:structuredClone(plan),at:now,actor});Object.assign(plan,{assignments:[...p.assignments],...(labels?{labels}:{}),version:plan.version+1,actor,updatedAt:now});
  }else if(action==='save'){
   requireTeacher();if(typeof p.table!=='string'||!['notices','items','roles','allowances','quizzes','examTypes','settings'].includes(p.table))throw Error('허용되지 않은 설정입니다.');
   const table=p.table as keyof State,entryId=p.id||key,old=s[table].find(x=>x.id===entryId);

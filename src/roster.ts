@@ -1,4 +1,5 @@
 import {State,tables} from './domain';
+import {defaultExamTypes} from './exam-types';
 export type RosterRow={studentNo:string;name:string;email:string};
 export function validateRoster(rows:unknown[][]):RosterRow[]{
  if(rows.length<2)throw Error('명단이 비어 있습니다.');
@@ -21,6 +22,7 @@ export function emptyClass(teacher:{uid:string;name:string},students:(RosterRow&
  const state=Object.fromEntries(tables.map(t=>[t,[]])) as unknown as State;
  state.members=[{id:teacher.uid,name:teacher.name,role:'teacher',active:true},...students.map(s=>({id:s.uid,name:s.name,studentNo:s.studentNo,role:'student',active:true,delegations:[]}))];
  state.settings=[{id:'class',year,className,version:1},{id:'shop',message:'',version:1},{id:'notifications',grant:true,spend:true,earn:true,version:1}];
+ state.examTypes=defaultExamTypes();
  state.plans=[{id:'seats',name:'우리 반 좌석',kind:'seat',version:1,assignments:Array(students.length).fill('')},{id:'cleaning',name:'청소구역',kind:'cleaning',version:1,assignments:Array(4).fill('')}];
  return state;
 }

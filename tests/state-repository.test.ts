@@ -31,6 +31,24 @@ class MemoryStore extends Store {
 }
 const simple=()=>{const state=seed();for(const table of HISTORY_TABLES)state[table]=[];return state;};
 
+test('start-only edits replace legacy end fields in primary and owner history views and archive the original',async()=>{
+ const state=simple();state.examTypes=[{id:'fixture-exam',name:'시험 fixture',active:true,version:1}];
+ const original={id:'legacy-exam',uid:'student1',studentNo:'01101',name:'기존 학생',typeId:'fixture-exam',typeName:'시험 fixture',date:'2099-01-01',start:'10:00',end:'11:00',status:'pending',version:1,at:1000};
+ state.exams=[original];const prepared=partitionState(state,'test'),store=new MemoryStore(prepared.main);
+ for(const row of prepared.records)store.set(row.path,row.value);
+ const repository=new StateRepository(store,'test');
+ await repository.execute('student1','exam',{id:original.id,version:1,typeId:'fixture-exam',date:original.date,start:'12:00'},'start-only-edit',2000);
+ const storedViews=[...store.docs.entries()].filter(([path,doc])=>/\/history_exams\/|\/history_student1_exams\//.test(path)&&store.value(doc).record.id===original.id).map(([,doc])=>store.value(doc).record);
+ // The primary record and its student's owner mirror must both be replaced.
+ assert.equal(storedViews.length,2);
+ for(const record of storedViews){assert.equal(record.timeMode,'start');assert.equal(Object.hasOwn(record,'end'),false);assert.equal(record.at,1000);assert.equal(record.version,2);}
+ const audit=store.records('audits').find(record=>record.action==='examRevision');assert.deepEqual(audit.before,original);
+ const commits=store.commits;
+ await assert.rejects(repository.execute('student1','exam',{typeId:'fixture-exam',date:original.date,start:'12:00'},'same-start',3000),/겹치는/);assert.equal(store.commits,commits);
+ await repository.execute('student1','exam',{typeId:'fixture-exam',date:original.date,start:'12:01'},'another-start',4000);
+ assert.equal(store.records('exams').length,2);
+});
+
 test('repository atomically migrates bounded legacy rows and preserves old/new idempotency',async()=>{
  const state=simple();state.audits=Array.from({length:175},(_,i)=>({id:`student1_legacy${i}`,actor:'student1',action:'preferences',input:JSON.stringify({action:'preferences',p:{enabled:true}}),at:i+1}));const store=new MemoryStore(state),repository=new StateRepository(store,'test');store.conflicts=1;
  const first=await repository.execute('student1','preferences',{enabled:false},'new',Date.now());assert.equal(first.migrated,80);assert.equal(store.main().audits.length,95);assert.equal(store.records('audits').length,81);

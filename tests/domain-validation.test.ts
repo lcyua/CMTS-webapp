@@ -1,8 +1,11 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {command,visible,kstDate,balance} from '../src/domain';
-import {seed} from '../src/seed';
+import {seed as demoSeed} from '../src/seed';
 import {calendarDate,calendarMonth} from '../src/validation';
+
+// Keep historical interval payload coverage independent of the current catalog.
+function seed(){const state=demoSeed();state.examTypes.push({id:'itq',name:'ITQ (legacy fixture)',active:true,version:1});return state;}
 
 test('unknown action fields and malformed payloads cannot grow or mutate class state',()=>{
  const s=seed(),before=structuredClone(s);

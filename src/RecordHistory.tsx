@@ -2,6 +2,7 @@ import React,{useEffect,useState} from 'react';
 import * as api from './api';
 import type {HistoryTable} from './history';
 import type {State} from './domain';
+import {formatExamTime} from './exam-time';
 
 type RecordRow=Record<string,any>;
 const date=(value:unknown)=>typeof value==='number'?new Date(value).toLocaleString('ko-KR',{timeZone:'Asia/Seoul'}):'';
@@ -17,7 +18,7 @@ export function RecordHistory({table,title,revision,teacher=false,name,onState,i
  {error&&<p role="alert" className="error">{error} <button className="text" onClick={()=>setGeneration(value=>value+1)}>다시 시도</button></p>}
  {records.length===0&&!busy&&!error&&<p>아직 기록이 없습니다.</p>}
  {records.length>0&&<div className="table-wrap"><table><thead><tr><th>일시</th>{teacher&&<th>학생</th>}<th>{table==='events'?'사유':'내용'}</th><th>{table==='events'?'증감':'상태'}</th></tr></thead><tbody>{records.map((row,index)=><tr key={row.id+'_'+index}>
-  <td>{table==='exams'?`${row.date} ${row.start}–${row.end}`:date(row.at||row.acquiredAt||row.createdAt)}</td>
+  <td>{table==='exams'?`${row.date} ${formatExamTime(row)}`:date(row.at||row.acquiredAt||row.createdAt)}</td>
   {teacher&&<td>{name?.(row.uid)||row.name||row.uid}</td>}
   <td>{row.reason||row.title||row.question||row.name||row.typeName||status[row.type]||''}{['inbox','notices'].includes(table)&&row.body&&<p className="pre">{row.body}</p>}{table==='notices'&&/^https:\/\//i.test(row.url||'')&&<a href={row.url} target="_blank" rel="noopener noreferrer">첨부 링크 열기 ↗</a>}</td>
   <td>{table==='events'?`${row.amount>0?'+':''}${row.amount} P · ${status[row.type]||row.type}`:table==='attempts'?(row.correct?'정답':'오답'):table==='inbox'?(row.read?'읽음':<button className="secondary" disabled={busy} onClick={async()=>{setBusy(true);setError('');try{const state=await api.send('read',{id:row.id});onState?.(state);setGeneration(value=>value+1);}catch(e){setError(e instanceof Error?e.message:'알림을 읽지 못했습니다.');}finally{setBusy(false);}}}>읽음 표시</button>):status[row.status]||''}</td>

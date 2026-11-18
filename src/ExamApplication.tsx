@@ -1,5 +1,6 @@
 import React, {useState} from 'react';
 import {kstDate, RecordData, State} from './domain';
+import {formatExamTime} from './exam-time';
 
 type Props = {s:State; disabled:boolean; save:(p:RecordData)=>Promise<boolean>};
 
@@ -28,15 +29,15 @@ export function ExamApplication({s,disabled,save}:Props){
     {s.examTypes.filter(type=>type.active||type.id===editing?.typeId).map(type=><option value={type.id} key={type.id}>{type.name}{type.active?'':' (접수 중지)'}</option>)}
    </select></label>
    <label>시험일<input type="date" name="date" min={kstDate()} defaultValue={editing?.date||''} required disabled={disabled||submitting}/></label>
-   <label>시작<input type="time" name="start" defaultValue={editing?.start||''} required disabled={disabled||submitting}/></label>
-   <label>종료<input type="time" name="end" defaultValue={editing?.end||''} required disabled={disabled||submitting}/></label>
+   <label>시작 시간<input type="time" name="start" defaultValue={editing?.start||''} required disabled={disabled||submitting}/></label>
    <button disabled={disabled||submitting||!s.examTypes.some(type=>type.active)}>{editing?'수정 저장':'신청 제출'}</button>
    {editing&&<button type="button" className="secondary" disabled={submitting} onClick={()=>{setEditing(null);setError('');}}>수정 취소</button>}
   </form>
+  {editing?.end&&<p>수정하면 시작 시간만 저장합니다. 이전 신청의 종료 시간은 변경 이력에 보관됩니다.</p>}
   {!s.examTypes.some(type=>type.active)&&<p>현재 접수 중인 시험 종목이 없습니다.</p>}
   {error&&<p role="alert" className="error">{error}</p>}
   {pending.length>0&&<div><h3>대기 중인 내 신청 수정</h3>{pending.map(exam=><div className="row" key={exam.id}>
-   <span>{exam.typeName} · {exam.date} {exam.start}–{exam.end}</span>
+   <span>{exam.typeName} · {exam.date} {formatExamTime(exam)}</span>
    <button type="button" className="secondary" disabled={disabled||submitting} onClick={()=>{setEditing(exam);setError('');}}>신청 수정</button>
   </div>)}</div>}
  </section>;
