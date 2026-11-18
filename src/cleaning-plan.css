@@ -1,0 +1,8 @@
+.cleaning-zones{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,190px),1fr));gap:16px;margin:20px 0}
+.cleaning-zone{min-width:0;border:1px solid var(--line,#e8d4be);border-radius:12px;padding:14px;background:var(--surface,#fffdf9)}
+.cleaning-zone label{display:flex;flex-direction:column;gap:6px;margin-bottom:12px}
+.cleaning-zone label:last-child{margin-bottom:0}
+.cleaning-zone input,.cleaning-zone select{box-sizing:border-box;width:100%;min-width:0}
+.cleaning-zone h3{margin:0 0 10px;font-size:1rem;overflow-wrap:anywhere}
+.cleaning-zone .assignment{margin:0;overflow-wrap:anywhere}
+.cleaning-plan .actions{display:flex;flex-wrap:wrap;gap:10px}

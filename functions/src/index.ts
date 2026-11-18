@@ -14,6 +14,7 @@ export const portal=onCall({region:'asia-northeast3',maxInstances:5},async req=>
  const snap=await tx.get(ref);if(!snap.exists)throw Error('학급이 설정되지 않았습니다.');const s=snap.data() as State;
  const m=s.members.find(m=>m.id===uid);if(!m?.active)throw Error('학급 접근 권한이 없습니다.');
  if(action==='readState')return visible(s,uid);
+ if(action==='memberProfile')throw Error('학생 이름·학번 수정은 현재 Workers 서버에서만 지원합니다.');
  if(typeof key!=='string'||!/^[-a-zA-Z0-9_]{1,120}$/.test(key))throw Error('요청 키 오류');
  command(s,uid,action,p,key);
  // Firestore document maximum is 1 MiB; leave space and fail atomically.

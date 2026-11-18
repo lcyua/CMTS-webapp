@@ -5,6 +5,12 @@ dist/
 functions/lib/
 .firebase/
 *-debug.log
+functions/.secret.local
+.wrangler/
+.dev.vars*
+work/
+__pycache__/
+*.pyc
 
 imports/
 roster*.xlsx
